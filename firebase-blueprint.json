@@ -1,0 +1,88 @@
+{
+  "entities": {
+    "User": {
+      "title": "Học Sinh",
+      "description": "Thông tin tài khoản học sinh ôn tập IC3 Spark",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID duy nhất của học sinh" },
+        "username": { "type": "string", "description": "Tên đăng nhập viết thường" },
+        "passwordHash": { "type": "string", "description": "Mật khẩu đã được mã hóa" },
+        "salt": { "type": "string", "description": "Chuỗi tẩm muối bảo mật" },
+        "nickname": { "type": "string", "description": "Tên học sinh" },
+        "grade": { "type": "number", "description": "Khối lớp (3-8)" },
+        "school": { "type": "string", "description": "Trường tiểu học/THCS" },
+        "classroom": { "type": "string", "description": "Lớp học" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Ngày giờ tạo tài khoản" }
+      },
+      "required": ["id", "username", "passwordHash", "salt", "nickname", "grade", "school", "classroom", "createdAt"]
+    },
+    "Progress": {
+      "title": "Tiến Trình Học Tập",
+      "description": "Tiến trình hoàn thành các bài học của học sinh",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "ID của học sinh sở hữu" },
+        "grade": { "type": "number", "description": "Khối lớp tương ứng" },
+        "lessonId": { "type": "string", "description": "ID bài học" },
+        "completedQuestions": { "type": "number", "description": "Số câu hỏi đã hoàn thành" },
+        "correctAnswers": { "type": "number", "description": "Số câu trả lời đúng" },
+        "totalQuestions": { "type": "number", "description": "Tổng số câu hỏi" },
+        "isCompleted": { "type": "boolean", "description": "Đã hoàn thành bài học chưa" },
+        "lastUpdated": { "type": "string", "format": "date-time", "description": "Ngày giờ cập nhật cuối cùng" }
+      },
+      "required": ["userId", "grade", "lessonId", "completedQuestions", "correctAnswers", "totalQuestions", "isCompleted", "lastUpdated"]
+    },
+    "Exam": {
+      "title": "Kết Quả Luyện Đề",
+      "description": "Lịch sử điểm thi luyện đề thi thử IC3 Spark của học sinh",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID kết quả thi" },
+        "userId": { "type": "string", "description": "ID của học sinh tham gia thi" },
+        "grade": { "type": "number", "description": "Khối lớp làm bài luyện" },
+        "score": { "type": "number", "description": "Điểm số đạt được (Hệ 1000)" },
+        "correctCount": { "type": "number", "description": "Số câu làm đúng" },
+        "totalQuestions": { "type": "number", "description": "Tổng số câu hỏi của đề" },
+        "durationSeconds": { "type": "number", "description": "Thời gian làm bài tính bằng giây" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Thời gian hoàn thành bài kiểm tra" }
+      },
+      "required": ["id", "userId", "grade", "score", "correctCount", "totalQuestions", "durationSeconds", "createdAt"]
+    },
+    "File": {
+      "title": "Hồ Sơ Tài Liệu",
+      "description": "Thông tin lưu trữ tệp dữ liệu, văn bản học sinh tải lên",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID duy nhất của tệp" },
+        "userId": { "type": "string", "description": "Mã học sinh sở hữu tệp" },
+        "fileName": { "type": "string", "description": "Tên gốc của tệp" },
+        "fileType": { "type": "string", "description": "Định dạng MIME tệp" },
+        "fileSize": { "type": "number", "description": "Dung lượng tệp tính bằng byte" },
+        "physicalPath": { "type": "string", "description": "Đường dẫn vật lý nếu lưu offline" },
+        "downloadUrl": { "type": "string", "description": "Đường dẫn tải xuống trực tiếp từ Firebase Storage" },
+        "storagePath": { "type": "string", "description": "Đường dẫn lưu trên Firebase Storage" },
+        "uploadedAt": { "type": "string", "format": "date-time", "description": "Thời gian tải lên" }
+      },
+      "required": ["id", "userId", "fileName", "fileType", "fileSize", "uploadedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Cơ sở dữ liệu người dùng/học sinh hệ thống"
+    },
+    "/progress/{progressId}": {
+      "schema": "Progress",
+      "description": "Tiến trình học tập chi tiết của học sinh"
+    },
+    "/exams/{examId}": {
+      "schema": "Exam",
+      "description": "Kết quả lịch sử điểm thi thử của học sinh"
+    },
+    "/files/{fileId}": {
+      "schema": "File",
+      "description": "Metadata quản lý các tệp thông tin trong học phần"
+    }
+  }
+}

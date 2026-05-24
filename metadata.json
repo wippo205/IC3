@@ -1,0 +1,6 @@
+{
+  "name": "Wippo IC3",
+  "description": "Ứng dụng ôn tập và kiểm tra kiến thức IC3.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

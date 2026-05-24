@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // 1. Users Collection
+    match /users/{userId} {
+      allow get, write: if isValidId(userId);
+      allow list: if true;
+    }
+
+    // 2. Progress Collection
+    match /progress/{progressId} {
+      allow get, write: if isValidId(progressId);
+      allow list: if true;
+    }
+
+    // 3. Exams Collection
+    match /exams/{examId} {
+      allow get, write: if isValidId(examId);
+      allow list: if true;
+    }
+
+    // 4. Files Collection
+    match /files/{fileId} {
+      allow get, write, delete: if isValidId(fileId);
+      allow list: if true;
+    }
+
+    // 5. Lessons Collection
+    match /lessons/{lessonId} {
+      allow read, write: if true;
+    }
+  }
+}
