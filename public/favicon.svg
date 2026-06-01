@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Beautiful rounded accent base with vibrant safety yellow -->
+  <rect width="512" height="512" rx="128" fill="#EFFF15"/>
+  <!-- An artistic, playful, handwritten stroke of a lowercase 'w' -->
+  <path d="M 155 210 Q 150 290 190 315 Q 220 325 240 255 Q 255 315 285 325 Q 325 315 355 210" 
+        fill="none" 
+        stroke="#0E0E10" 
+        stroke-width="50" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"/>
+</svg>

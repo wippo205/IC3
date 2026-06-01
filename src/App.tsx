@@ -306,7 +306,12 @@ export default function App() {
             onClick={() => handleNavigation('dashboard')} 
             className="flex items-center gap-2 cursor-pointer select-none group shrink-0"
           >
-            <span className="text-3xl group-hover:scale-110 transition-transform">🦛</span>
+            <img 
+              src="/favicon.svg" 
+              className="w-10 h-10 rounded-xl border-2 border-amber-200 group-hover:scale-110 transition-transform duration-300 shadow-xs object-cover" 
+              alt="Wippo IC3 Logo"
+              referrerPolicy="no-referrer"
+            />
             <div>
               <h1 className="text-xl font-black font-display text-orange-600 tracking-tight flex items-center gap-1">
                 Wippo IC3
