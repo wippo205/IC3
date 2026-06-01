@@ -1,0 +1,41 @@
+name: Deploy to Google Cloud
+
+on:
+  push:
+    branches: [ main ] # Hoặc branch bất kỳ mà bạn dùng để deploy (ví dụ: master, dev)
+
+# =========================================================================
+# VÙNG 1: CẤP QUYỀN CHO GITHUB (BẮT BUỘC PHẢI CÓ)
+# Dòng này cho phép GitHub tạo ra một Token tạm thời để "chào hỏi" Google Cloud
+# =========================================================================
+permissions:
+  contents: 'read'
+  id-token: 'write' 
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code từ GitHub
+      uses: actions/checkout@v4
+
+    # =========================================================================
+    # VÙNG 2: ĐĂNG NHẬP VÀO GOOGLE CLOUD KHÔNG DÙNG FILE KEY JSON
+    # Bạn thay thế hoàn toàn Step đăng nhập cũ bằng đoạn code chuẩn dưới đây
+    # =========================================================================
+    - name: Xác thực với Google Cloud bằng WIF
+      uses: google-github-actions/auth@v2
+      with:
+        # Đường dẫn Provider chúng ta vừa tạo thành công ở bước trước
+        workload_identity_provider: 'projects/311031141623/locations/global/workloadIdentityPools/wippo-ic3/providers/wippo-provider'
+        # Email Service Account của bạn
+        service_account: 'github-action-1248522468@project-4771cc5e-55d8-449a-9fc.iam.gserviceaccount.com'
+
+    # =========================================================================
+    # VÙNG 3: CÁC BƯỚC TIẾP THEO (Giữ nguyên các lệnh Deploy của bạn)
+    # Ví dụ dưới đây là lệnh kiểm tra xem gcloud đã đăng nhập thành công hay chưa
+    # =========================================================================
+    - name: Thử nghiệm chạy lệnh gcloud
+      run: |
+        gcloud auth list
+        gcloud projects list
