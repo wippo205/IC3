@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users, 
@@ -388,21 +388,23 @@ export default function TeacherDashboardView({ user, token, onLogout, isDarkMode
     ? examTakers.reduce((prev, curr) => (curr.stats.highestScore > prev.stats.highestScore ? curr : prev), examTakers[0])
     : null;
 
-  // Filter and Search logic
-  const filteredStudents = students.filter(student => {
-    const matchesSearch = 
-      (student.nickname || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (student.username || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (student.school && (student.school || '').toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (student.classroom && (student.classroom || '').toLowerCase().includes(searchQuery.toLowerCase()));
+  // Filter and Search logic (memoized to prevent performance bottlenecks on large cohorts)
+  const filteredStudents = useMemo(() => {
+    return students.filter(student => {
+      const matchesSearch = 
+        (student.nickname || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (student.username || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (student.school && (student.school || '').toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (student.classroom && (student.classroom || '').toLowerCase().includes(searchQuery.toLowerCase()));
 
-    const matchesGrade = selectedGradeFilter === 'all' || student.grade === Number(selectedGradeFilter);
+      const matchesGrade = selectedGradeFilter === 'all' || student.grade === Number(selectedGradeFilter);
 
-    return matchesSearch && matchesGrade;
-  });
+      return matchesSearch && matchesGrade;
+    });
+  }, [students, searchQuery, selectedGradeFilter]);
 
-  // Organize the tree structure
-  const getTreeData = () => {
+  // Organize the tree structure (memoized to eliminate redundant layout computations and Vietnamese string comparisons)
+  const treeData = useMemo(() => {
     const tree: {
       [school: string]: {
         [grade: number]: {
@@ -438,12 +440,12 @@ export default function TeacherDashboardView({ user, token, onLogout, isDarkMode
     });
 
     return tree;
-  };
+  }, [filteredStudents]);
 
   // Pre-expand nested lists by default when students list loaded
   useEffect(() => {
     if (students && students.length > 0) {
-      const tree = getTreeData();
+      const tree = treeData;
       const initialSchools: Record<string, boolean> = {};
       const initialGrades: Record<string, boolean> = {};
       
@@ -463,7 +465,7 @@ export default function TeacherDashboardView({ user, token, onLogout, isDarkMode
         return prev;
       });
     }
-  }, [students]);
+  }, [students, treeData]);
 
   const handleExpandAll = (treeData: any) => {
     const newSchools: Record<string, boolean> = {};
@@ -1098,7 +1100,7 @@ export default function TeacherDashboardView({ user, token, onLogout, isDarkMode
 
                     <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                       <button
-                        onClick={() => handleExpandAll(getTreeData())}
+                        onClick={() => handleExpandAll(treeData)}
                         className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 rounded-lg text-xs font-bold transition-all cursor-pointer"
                       >
                         ➕ Mở tất cả
@@ -1114,7 +1116,7 @@ export default function TeacherDashboardView({ user, token, onLogout, isDarkMode
 
                   {/* Sơ đồ khối List only */}
                   {(() => {
-                    const tree = getTreeData();
+                    const tree = treeData;
                     const sortedSchools = Object.keys(tree).sort((a, b) => a.localeCompare(b));
 
                     return (

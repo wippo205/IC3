@@ -105,12 +105,13 @@ export default function App() {
     }
   }, [token]);
 
-  // Sync details from server
+  // Sync details from server (optimized using user?.id primitive to prevent infinite re-fetches)
+  const userId = user?.id;
   useEffect(() => {
-    if (token && user) {
+    if (token && userId) {
       fetchUserStats();
     }
-  }, [token, user]);
+  }, [token, userId]);
 
   const verifyUserSession = async () => {
     try {

@@ -200,6 +200,7 @@ export default function DashboardView({ user, token, revisionProgress, homeworkP
         let statusColor = 'bg-rose-50 border-rose-300 text-rose-800';
         let statusBadge = 'bg-rose-500 text-white';
         let detailText = 'Hãy bấm nút "Làm bài ngay" ở bên phải để ôn tập và tích lũy điểm số nhé!';
+        let isHwCompleted = false;
 
         if (progress) {
           const percent = progress.totalQuestions > 0 ? (progress.correctAnswers / progress.totalQuestions) * 100 : 0;
@@ -208,6 +209,7 @@ export default function DashboardView({ user, token, revisionProgress, homeworkP
             statusColor = 'bg-emerald-50 border-emerald-300 text-emerald-800';
             statusBadge = 'bg-emerald-500 text-white';
             detailText = `Tuyệt vời! Em đã hoàn thành xuất sắc mục tiêu bài tập về nhà với độ chính xác đạt ${Math.round(percent)}%!`;
+            isHwCompleted = true;
           } else {
             statusText = `Chưa đạt (${Math.round(percent)}%) ⚠️`;
             statusColor = 'bg-amber-50 border-amber-300 text-amber-800';
@@ -247,13 +249,19 @@ export default function DashboardView({ user, token, revisionProgress, homeworkP
               <span className="text-[11px] font-extrabold bg-white/70 px-3 py-2 rounded-xl text-slate-800 border border-slate-200/80 shadow-xs select-none w-full sm:w-auto text-center">
                 🎯 Chỉ tiêu: đúng từ 90% trở lên
               </span>
-              <button
-                type="button"
-                onClick={() => onStartHomework(activeHw.lessonId, activeHw.id)}
-                className="px-4 py-2.5 bg-orange-500 hover:bg-orange-600 border-2 border-orange-400 hover:border-orange-500 text-white text-xs font-black rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 w-full sm:w-auto"
-              >
-                <span>Làm bài ngay 🚀</span>
-              </button>
+              {isHwCompleted ? (
+                <div className="px-5 py-2.5 bg-emerald-500 border-2 border-emerald-400 text-white text-xs font-black rounded-xl shadow-md flex items-center justify-center gap-1.5 w-full sm:w-auto select-none">
+                  <span>Hoàn thành 🎉</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onStartHomework(activeHw.lessonId, activeHw.id)}
+                  className="px-4 py-2.5 bg-orange-500 hover:bg-orange-600 border-2 border-orange-400 hover:border-orange-500 text-white text-xs font-black rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 w-full sm:w-auto"
+                >
+                  <span>Làm bài ngay 🚀</span>
+                </button>
+              )}
             </div>
           </motion.div>
         );
@@ -488,12 +496,14 @@ export default function DashboardView({ user, token, revisionProgress, homeworkP
 
                   let statusText = 'Chưa làm ❌';
                   let statusClass = 'text-rose-600 bg-rose-50 border-rose-200';
+                  let isDone = false;
                   
                   if (prog) {
                     const percent = prog.totalQuestions > 0 ? (prog.correctAnswers / prog.totalQuestions) * 100 : 0;
                     if (percent >= 90) {
                       statusText = `Đạt (${Math.round(percent)}%) ✅`;
                       statusClass = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+                      isDone = true;
                     } else {
                       if (!isCurrentActive) {
                         statusText = `Chưa đạt (${Math.round(percent)}%) ❌`;
@@ -536,13 +546,19 @@ export default function DashboardView({ user, token, revisionProgress, homeworkP
                           {statusText}
                         </span>
                         {isCurrentActive && (
-                          <button
-                            type="button"
-                            onClick={() => onStartHomework(h.lessonId, h.id)}
-                            className="px-2.5 py-1 bg-sky-500 hover:bg-sky-600 border border-sky-400 text-white text-[10px] font-black rounded-lg transition-colors cursor-pointer shrink-0"
-                          >
-                            Làm bài
-                          </button>
+                          isDone ? (
+                            <span className="px-2.5 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 text-[10px] font-black rounded-lg select-none shrink-0">
+                              Hoàn thành 🎉
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => onStartHomework(h.lessonId, h.id)}
+                              className="px-2.5 py-1 bg-sky-500 hover:bg-sky-600 border border-sky-400 text-white text-[10px] font-black rounded-lg transition-colors cursor-pointer shrink-0"
+                            >
+                              Làm bài
+                            </button>
+                          )
                         )}
                       </div>
                     </div>
