@@ -20,29 +20,81 @@ import {
   HelpCircle,
   Activity
 } from 'lucide-react';
-import { LessonProgress, ExamRecord } from '../types';
+import { LessonProgress, ExamRecord, HomeworkProgress } from '../types';
 
 interface DashboardViewProps {
   user: { id: string; nickname: string; grade: number; school?: string; classroom?: string };
   token: string;
   revisionProgress: LessonProgress[];
+  homeworkProgress?: HomeworkProgress[];
   examRecords: ExamRecord[];
   fileCount: number;
+  onStartHomework: (lessonId: string, homeworkId: string) => void;
 }
 
-export default function DashboardView({ user, token, revisionProgress, examRecords, fileCount }: DashboardViewProps) {
-  // Overall metrics calculation
-  const highestExamScore = examRecords.length > 0 
-    ? Math.max(...examRecords.map(e => e.score)) 
+export default function DashboardView({ user, token, revisionProgress, homeworkProgress = [], examRecords, fileCount, onStartHomework }: DashboardViewProps) {
+  const [assignments, setAssignments] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchHomework = async () => {
+      try {
+        const resp = await fetch('/api/homework/assignments', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+          setAssignments(data.assignments || []);
+        }
+      } catch (err) {
+        console.error("Lỗi khi tải bài tập về nhà:", err);
+      }
+    };
+    fetchHomework();
+  }, [token]);
+
+  // 1. Filter to revision tests only
+  const revisionExams = examRecords.filter(e => e.isRevisionTest);
+
+  // Filter and sort user's class assignments
+  const myAssignments = assignments.filter((h: any) =>
+    h.grade === user.grade &&
+    (h.school || '').trim().toLowerCase() === (user.school || '').trim().toLowerCase() &&
+    (h.classroom || '').trim().toLowerCase() === (user.classroom || '').trim().toLowerCase()
+  );
+  const sortedMyAssignments = [...myAssignments].sort((a, b) => 
+    new Date(b.assignedAt).getTime() - new Date(a.assignedAt).getTime()
+  );
+
+  // 2. Group by lesson ID (each lesson/test separately) and keep only the highest score record of that test/lesson
+  const highestExamsByLesson: Record<string, ExamRecord> = {};
+  revisionExams.forEach(r => {
+    const lessonKey = r.lessonId || r.id;
+    const existing = highestExamsByLesson[lessonKey];
+    if (!existing || r.score > existing.score) {
+      highestExamsByLesson[lessonKey] = r;
+    }
+  });
+
+  // 3. Sort chronologically
+  const filteredExams = Object.values(highestExamsByLesson).sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+
+  // Overall metrics calculation based on revision tests
+  const highestExamScore = filteredExams.length > 0 
+    ? Math.max(...filteredExams.map(e => e.score)) 
     : 0;
 
-  const totalExamsTaken = examRecords.length;
+  const totalExamsTaken = filteredExams.length;
 
   const completedRevisionLessons = revisionProgress.filter(p => p.isCompleted).length;
 
-  // Average score
-  const avgExamScore = examRecords.length > 0
-    ? Math.round(examRecords.reduce((acc, cr) => acc + cr.score, 0) / examRecords.length)
+  // Average score calculated of all taken attempts, normalized if any scores are on the 1000-point IC3 scale
+  const avgExamScore = revisionExams.length > 0
+    ? Math.round(revisionExams.reduce((acc, cr) => {
+        const norm = cr.score > 100 ? Math.round(cr.score / 10) : cr.score;
+        return acc + norm;
+      }, 0) / revisionExams.length)
     : 0;
 
   // Mascot motivation quote depending on how they perform
@@ -51,23 +103,24 @@ export default function DashboardView({ user, token, revisionProgress, examRecor
       return `Chào em! Hãy cùng bắt tay học cùng Wippo nhé! Bắt đầu bằng cách thử giải bài tập "Ôn tập bài học" thôi nào! Đừng ngần ngại nha! 🦛🎈`;
     }
     if (avg >= 85) {
-      return `Quá tuyệt vời! Điểm trung bình bài kiểm tra của em đạt tận ${avg}/100! Thầy Wippo bái phục em rồi đó, hãy giữ vững phong độ đỉnh cao này nhé! ⭐✨`;
+      return `Quá tuyệt vời! Điểm trung bình bài kiểm tra của em đạt tận ${avg}%! Thầy Wippo bái phục em rồi đó, hãy giữ vững phong độ đỉnh cao này nhé! ⭐✨`;
     }
     if (avg >= 50) {
-      return `Làm tốt lắm con ơi! Điểm số ${avg}/100 cho thấy sự tiến bộ vô cùng triển vọng. Thử ôn luyện thêm một chút để lấy trọn 3 sao vàng nhé! 🚀`;
+      return `Làm tốt lắm con ơi! Điểm số ôn tập trung bình đạt ${avg}% cho thấy sự tiến bộ vô cùng triển vọng. Thử ôn luyện thêm một chút để lấy trọn 3 sao vàng nhé! 🚀`;
     }
-    return `Wippo tin em làm được mà! Thất bại là mẹ của thành công, cùng Wippo giải thêm vài câu ôn tập nữa để ghi điểm cao hơn ở lần tới nha! 💪☀️`;
+    return `Hành trình vĩ đại bắt đầu không phải bằng một bước nhảy, mà bằng một bước chân nhỏ bé. Học từ những điều cơ bản và nhỏ bé nhất! 💪☀️`;
   };
 
-  // Prepare chart series from exam records chronologically
-  const chartData = [...examRecords]
-    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-    .map((rec, i) => ({
-      name: `Lần ${i + 1}`,
-      'Điểm số': rec.score,
-      date: new Date(rec.createdAt).toLocaleDateString('vi', { month: 'numeric', day: 'numeric' }),
+  // Prepare chart series from filtered exam records, converting 1000-pt scores to percentage for beautiful presentation
+  const chartData = filteredExams.map((rec, i) => {
+    const displayScore = rec.score > 100 ? Math.round(rec.score / 10) : rec.score;
+    return {
+      name: new Date(rec.createdAt).toLocaleDateString('vi-VN', { month: '2-digit', day: '2-digit' }),
+      'Điểm số': displayScore,
+      formatterName: `Ngày ${new Date(rec.createdAt).toLocaleDateString('vi-VN')}`,
       correct: `${rec.correctCount}/${rec.totalQuestions}`
-    }));
+    };
+  });
 
   return (
     <div className="space-y-8 font-sans p-6 max-w-6xl mx-auto">
@@ -89,10 +142,9 @@ export default function DashboardView({ user, token, revisionProgress, examRecor
           </motion.div>
           <div className="text-center md:text-left space-y-2">
             <h2 className="text-3xl font-black font-display text-vibrant-blue tracking-tight">
-              Chào mừng, {user.nickname}! 👋
+              Chào mừng, em {user.nickname}! 👋
             </h2>
             <div className="text-base font-medium text-slate-500 flex flex-wrap items-center justify-center md:justify-start gap-x-2 gap-y-3">
-              <span>Hôm nay chúng mình cùng học và ôn tập kỹ năng số IC3 nhé!</span>
               <div className="flex flex-wrap gap-1.5 select-none">
                 <span className="inline-block bg-vibrant-yellow text-vibrant-navy px-3 py-1 rounded-full font-black text-xs border border-[#D9B632] shadow-xs">
                   Khối Lớp {user.grade}
@@ -113,8 +165,90 @@ export default function DashboardView({ user, token, revisionProgress, examRecor
         </div>
       </motion.div>
 
+      {/* Homework Alert */}
+      {(() => {
+        const studentActiveHws = assignments.filter((h: any) => 
+          h.grade === user.grade && 
+          (h.school || '').trim().toLowerCase() === (user.school || '').trim().toLowerCase() && 
+          (h.classroom || '').trim().toLowerCase() === (user.classroom || '').trim().toLowerCase() &&
+          new Date().getTime() <= new Date(h.deadline).getTime()
+        );
+
+        const activeHw = studentActiveHws.length > 0
+          ? [...studentActiveHws].sort((a: any, b: any) => new Date(b.assignedAt).getTime() - new Date(a.assignedAt).getTime())[0]
+          : null;
+
+        if (!activeHw) return null;
+
+        const progress = homeworkProgress.find(p => 
+          p.lessonId === activeHw.lessonId && 
+          p.homeworkId === activeHw.id
+        );
+        let statusText = 'Chưa làm 📚';
+        let statusColor = 'bg-rose-50 border-rose-300 text-rose-800';
+        let statusBadge = 'bg-rose-500 text-white';
+        let detailText = 'Hãy bấm nút "Làm bài ngay" ở bên phải để ôn tập và tích lũy điểm số nhé!';
+
+        if (progress) {
+          const percent = progress.totalQuestions > 0 ? (progress.correctAnswers / progress.totalQuestions) * 100 : 0;
+          if (percent >= 90) {
+            statusText = `Đạt (${Math.round(percent)}%) 🏆`;
+            statusColor = 'bg-emerald-50 border-emerald-300 text-emerald-800';
+            statusBadge = 'bg-emerald-500 text-white';
+            detailText = `Tuyệt vời! Em đã hoàn thành xuất sắc mục tiêu bài tập về nhà với độ chính xác đạt ${Math.round(percent)}%!`;
+          } else {
+            statusText = `Chưa đạt (${Math.round(percent)}%) ⚠️`;
+            statusColor = 'bg-amber-50 border-amber-300 text-amber-800';
+            statusBadge = 'bg-amber-500 text-white';
+            detailText = `Em đã làm bài (đạt ${Math.round(percent)}%) nhưng chưa chạm mốc 90% độ chính xác tối thiểu. Hãy luyện tập lại nhé!`;
+          }
+        }
+
+        return (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`rounded-[2rem] p-6 border-4 flex flex-col lg:flex-row items-center justify-between gap-5 ${statusColor} shadow-md overflow-hidden relative`}
+          >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-sky-200/10 rounded-full blur-lg" />
+            <div className="flex items-center gap-4 z-10 text-left flex-1">
+              <span className="text-4xl select-none">🕒</span>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-sm md:text-base font-black tracking-tight">
+                    Bài Tập Về Nhà được giao: <span className="underline decoration-wavy decoration-sky-400">{activeHw.lessonTitle}</span>
+                  </h3>
+                  <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${statusBadge}`}>
+                    Trạng thái: {statusText}
+                  </span>
+                </div>
+                <p className="text-xs font-semibold opacity-90 mt-1 leading-relaxed">
+                  {detailText}
+                </p>
+                <p className="text-[10px] font-bold opacity-75 mt-0.5">
+                  📅 Ngày giao: {new Date(activeHw.assignedAt).toLocaleDateString('vi-VN')} {new Date(activeHw.assignedAt).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})} • Hạn chót: <span className="font-extrabold underline">Hết ngày hôm nay (23:59)</span>
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row items-center gap-2.5 shrink-0 z-10 w-full lg:w-auto">
+              <span className="text-[11px] font-extrabold bg-white/70 px-3 py-2 rounded-xl text-slate-800 border border-slate-200/80 shadow-xs select-none w-full sm:w-auto text-center">
+                🎯 Chỉ tiêu: đúng từ 90% trở lên
+              </span>
+              <button
+                type="button"
+                onClick={() => onStartHomework(activeHw.lessonId, activeHw.id)}
+                className="px-4 py-2.5 bg-orange-500 hover:bg-orange-600 border-2 border-orange-400 hover:border-orange-500 text-white text-xs font-black rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 w-full sm:w-auto"
+              >
+                <span>Làm bài ngay 🚀</span>
+              </button>
+            </div>
+          </motion.div>
+        );
+      })()}
+
       {/* Overview Cards Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         
         {/* Revision Stat */}
         <div className="bg-white p-5 rounded-[2rem] border-4 border-vibrant-blue shadow-sm flex items-center gap-4">
@@ -130,15 +264,15 @@ export default function DashboardView({ user, token, revisionProgress, examRecor
           </div>
         </div>
 
-        {/* Highest Score */}
+        {/* Highest Score changed to Average Score */}
         <div className="bg-white p-5 rounded-[2rem] border-4 border-vibrant-pink shadow-sm flex items-center gap-4">
           <div className="p-3.5 bg-vibrant-pink/10 text-vibrant-pink rounded-2xl shrink-0">
             <Trophy className="w-7 h-7" />
           </div>
           <div>
-            <p className="text-xs font-black text-gray-400 uppercase tracking-wider">Điểm cao nhất</p>
+            <p className="text-xs font-black text-gray-400 uppercase tracking-wider">Điểm trung bình</p>
             <div className="flex items-end gap-1.5">
-              <span className="text-3xl font-black text-vibrant-pink font-display">{highestExamScore}</span>
+              <span className="text-3xl font-black text-vibrant-pink font-display">{avgExamScore}</span>
               <span className="text-xs font-bold text-gray-400 mb-1">/100</span>
             </div>
           </div>
@@ -158,115 +292,252 @@ export default function DashboardView({ user, token, revisionProgress, examRecor
           </div>
         </div>
 
-        {/* Resource Files Stat */}
-        <div className="bg-white p-5 rounded-[2rem] border-4 border-vibrant-yellow shadow-sm flex items-center gap-4">
-          <div className="p-3.5 bg-vibrant-yellow/15 text-[#D97706] rounded-2xl shrink-0">
-            <FolderGit className="w-7 h-7" />
-          </div>
-          <div>
-            <p className="text-xs font-black text-gray-400 uppercase tracking-wider">Tài liệu học</p>
-            <div className="flex items-end gap-1.5">
-              <span className="text-3xl font-black text-vibrant-navy font-display">{fileCount}</span>
-              <span className="text-xs font-bold text-gray-400 mb-1">thư mục</span>
-            </div>
-          </div>
-        </div>
-
       </div>
 
       {/* Mascot Custom Motivation Section */}
       <div className="bg-[#FFEDD5] rounded-[2rem] border-4 border-vibrant-yellow p-6 flex flex-col md:flex-row items-center gap-4">
         <span className="text-4xl select-none shrink-0" role="img" aria-label="mascot">🦛🏫</span>
         <p className="text-sm font-bold text-[#D97706] leading-relaxed text-center md:text-left">
-          <strong>Wippo động viên:</strong> {getMotivationalStatement(avgExamScore, totalExamsTaken, completedRevisionLessons)}
+          {getMotivationalStatement(avgExamScore, totalExamsTaken, completedRevisionLessons)}
         </p>
       </div>
 
       {/* Details analytics grid (Chart & detailed progress) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
-        {/* Recharts score history line */}
-        <div className="bg-white rounded-[2rem] border-4 border-vibrant-pink p-6 shadow-sm space-y-4">
-          <h3 className="font-extrabold text-slate-800 text-lg flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-vibrant-pink" />
-            Lịch sử điểm số bài kiểm tra
-          </h3>
+        {/* Recharts score history line & scoreboard table */}
+        <div className="bg-white rounded-[2rem] border-4 border-vibrant-pink p-6 shadow-sm flex flex-col justify-between space-y-4">
+          <div>
+            <h3 className="font-extrabold text-slate-800 text-lg flex items-center gap-2 mb-4">
+              <TrendingUp className="w-5 h-5 text-vibrant-pink" />
+              Lịch sử điểm số bài kiểm tra
+            </h3>
 
-          {examRecords.length === 0 ? (
-            <div className="h-64 flex flex-col items-center justify-center bg-vibrant-bg/40 border border-dashed rounded-2xl p-6 text-sm text-slate-400 font-semibold text-center">
-              <span className="text-3xl mb-2 select-none" role="img" aria-label="clock">📊</span>
-              Em chưa làm bài thi thử nào để tích lũy biểu đồ điểm!
-              <p className="text-xs font-normal mt-1 text-slate-400">Hãy thử nhấn vào "Kiểm tra bài học" để tích lũy điểm ngay.</p>
-            </div>
-          ) : (
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorPoints" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#FF8B8B" stopOpacity={0.4}/>
-                      <stop offset="95%" stopColor="#FF8B8B" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} fontWeight="bold" dy={10} />
-                  <YAxis domain={[0, 100]} stroke="#94a3b8" fontSize={11} fontWeight="bold" />
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '16px', border: '2px solid #FF8B8B', fontWeight: 'bold', fontSize: '13px' }}
-                    labelFormatter={(label) => `Lượt thi: ${label}`}
-                  />
-                  <Area type="monotone" dataKey="Điểm số" stroke="#FF8B8B" strokeWidth={3} fillOpacity={1} fill="url(#colorPoints)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-
-        {/* Detailed lessons logs and success indicators */}
-        <div className="bg-white rounded-[2rem] border-4 border-vibrant-blue p-6 shadow-sm space-y-4">
-          <h3 className="font-extrabold text-slate-800 text-lg flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-vibrant-blue animate-spin" />
-            Tiến độ ôn luyện chi tiết
-          </h3>
-
-          <div className="space-y-4">
-            {revisionProgress.length === 0 ? (
-              <div className="p-12 text-center bg-vibrant-bg/40 border border-dashed rounded-3xl text-sm font-semibold text-slate-400">
-                🦛 Em chưa tham gia ôn tập bài học nào cả!
+            {filteredExams.length === 0 ? (
+              <div className="h-64 flex flex-col items-center justify-center bg-vibrant-bg/40 border border-dashed rounded-2xl p-6 text-sm text-slate-400 font-semibold text-center">
+                <span className="text-3xl mb-2 select-none" role="img" aria-label="clock">📊</span>
+                Em chưa làm bài kiểm tra ôn tập nào để tích lũy biểu đồ điểm!
+                <p className="text-xs font-normal mt-1 text-slate-400">Hãy thử nhấn vào "Kiểm tra 📝" trong bài học ôn tập để tích lũy điểm nhé.</p>
               </div>
             ) : (
-              revisionProgress.map((p, idx) => {
-                const percent = Math.round((p.correctAnswers / p.totalQuestions) * 100);
-                return (
-                  <div key={idx} className="bg-vibrant-bg/50 border-2 border-vibrant-yellow p-4 rounded-3xl space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="font-extrabold text-sm text-slate-800">
-                        Bài {p.lessonId.split('_')[1]}: {p.lessonId === 'lesson_1' ? 'Máy tính quanh ta' : p.lessonId === 'lesson_2' ? 'Phần mềm ứng dụng' : 'Khám phá thế giới trực tuyến'}
-                      </span>
-                      <span className={`py-1 px-2 text-[10px] font-black rounded-lg uppercase ${
-                        p.isCompleted ? 'bg-vibrant-green text-white shadow-xs' : 'bg-vibrant-yellow text-vibrant-navy shadow-xs'
-                      }`}>
-                        {p.isCompleted ? 'Xong ✅' : 'Chưa xong ⏳'}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between items-center text-xs text-slate-400 font-bold">
-                      <span>Trả lời đúng: {p.correctAnswers}/{p.totalQuestions} câu</span>
-                      <span>Chính xác {percent}%</span>
-                    </div>
-
-                    <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full transition-all duration-300 ${
-                          p.isCompleted ? 'bg-vibrant-green' : 'bg-vibrant-yellow'
-                        }`}
-                        style={{ width: `${(p.completedQuestions / p.totalQuestions) * 100}%` }}
+              <div className="space-y-6">
+                <div className="h-44">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="colorPoints" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#FF8B8B" stopOpacity={0.4}/>
+                          <stop offset="95%" stopColor="#FF8B8B" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} fontWeight="bold" dy={10} />
+                      <YAxis domain={[0, 100]} stroke="#94a3b8" fontSize={11} fontWeight="bold" />
+                      <Tooltip 
+                        contentStyle={{ borderRadius: '16px', border: '2px solid #FF8B8B', fontWeight: 'bold', fontSize: '13px' }}
+                        labelFormatter={(label, items) => {
+                          const item = items?.[0]?.payload;
+                          return item ? `${item.formatterName}` : `Lượt làm`;
+                        }}
                       />
-                    </div>
+                      <Area type="monotone" dataKey="Điểm số" stroke="#FF8B8B" strokeWidth={3} fillOpacity={1} fill="url(#colorPoints)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Bảng điểm chi tiết */}
+                <div className="border-2 border-slate-100 rounded-2xl overflow-hidden shadow-xs bg-slate-50/50 mt-4">
+                  <div className="bg-vibrant-pink/10 px-4 py-2 border-b border-slate-100 flex items-center justify-between">
+                    <span className="font-extrabold text-[10px] text-vibrant-pink uppercase tracking-wider">📊 Bảng Điểm Kiểm Tra</span>
+                    <span className="text-[9px] font-bold text-slate-400 bg-white/80 py-0.5 px-2 rounded-md">Điểm cao nhất mỗi bài ôn tập</span>
                   </div>
-                );
-              })
+                  <div className="overflow-y-auto max-h-48 text-left">
+                    <table className="w-full border-collapse text-xs font-bold text-slate-700">
+                      <thead>
+                        <tr className="bg-white border-b border-slate-100 text-[10px] text-slate-400 uppercase tracking-wider">
+                          <th className="py-2 px-3 font-black text-center w-12">STT</th>
+                          <th className="py-2 px-3 font-black">Tên bài kiểm tra</th>
+                          <th className="py-2 px-3 font-black text-center w-28">Ngày làm</th>
+                          <th className="py-2 px-3 font-black text-right w-20">Điểm</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white/50">
+                        {filteredExams.map((record, i) => (
+                          <tr key={record.id} className="hover:bg-vibrant-pink/5 transition-colors">
+                            <td className="py-2 px-3 font-mono text-center text-slate-400">{i + 1}</td>
+                            <td className="py-2 px-3 text-slate-800 font-extrabold">
+                              {(() => {
+                                if (record.lessonTitle) {
+                                  const lower = record.lessonTitle.toLowerCase();
+                                  if (lower.startsWith('kiểm tra') || lower.startsWith('đề thi') || lower.startsWith('đề ôn tập')) {
+                                    return record.lessonTitle;
+                                  }
+                                  return `Kiểm tra ${record.lessonTitle}`;
+                                }
+                                if (record.lessonId) {
+                                  const parts = record.lessonId.split('_');
+                                  const lastPart = parts[parts.length - 1];
+                                  if (!isNaN(Number(lastPart))) {
+                                    return `Kiểm tra Bài ${lastPart}`;
+                                  }
+                                  return `Kiểm tra ${lastPart}`;
+                                }
+                                return `Kiểm tra IC3 Lớp ${record.grade || user.grade}`;
+                              })()}
+                            </td>
+                            <td className="py-2 px-3 text-center text-slate-500 font-medium">
+                              {new Date(record.createdAt).toLocaleDateString('vi-VN')}
+                            </td>
+                            <td className="py-2 px-3 text-right">
+                              <span className="font-black text-sm text-vibrant-pink">
+                                {record.score > 100 ? `${record.score} điểm` : `${record.score}%`}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
             )}
+          </div>
+        </div>
+
+        {/* Detailed progress and Homework Tracking Bar */}
+        <div className="flex flex-col gap-6">
+          {/* Detailed lessons logs and success indicators */}
+          <div className="bg-white rounded-[2rem] border-4 border-vibrant-blue p-6 shadow-sm space-y-4">
+            <h3 className="font-extrabold text-slate-800 text-lg flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-vibrant-blue animate-spin" />
+              Tiến độ ôn luyện chi tiết
+            </h3>
+
+            <div className="space-y-4 max-h-[220px] overflow-y-auto pr-1">
+              {revisionProgress.length === 0 ? (
+                <div className="p-12 text-center bg-vibrant-bg/40 border border-dashed rounded-3xl text-sm font-semibold text-slate-400">
+                  🦛 Em chưa tham gia ôn tập bài học nào cả!
+                </div>
+              ) : (
+                revisionProgress.map((p, idx) => {
+                  const percent = Math.round((p.correctAnswers / p.totalQuestions) * 100);
+                  return (
+                    <div key={idx} className="bg-vibrant-bg/50 border-2 border-vibrant-yellow p-4 rounded-3xl space-y-2 text-left">
+                      <div className="flex justify-between items-center">
+                        <span className="font-extrabold text-sm text-slate-800">
+                          {p.lessonTitle || (p.lessonId.startsWith('lesson_') ? `Chủ đề ${p.lessonId.split('_')[1]}` : p.lessonId)}
+                        </span>
+                        <span className={`py-1 px-2 text-[10px] font-black rounded-lg uppercase ${
+                          p.isCompleted ? 'bg-vibrant-green text-white shadow-xs' : 'bg-vibrant-yellow text-vibrant-navy shadow-xs'
+                        }`}>
+                          {p.isCompleted ? 'Xong ✅' : 'Chưa xong ⏳'}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center text-xs text-slate-400 font-bold">
+                        <span>Trả lời đúng: {p.correctAnswers}/{p.totalQuestions} câu</span>
+                        <span>Chính xác {percent}%</span>
+                      </div>
+
+                      <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            p.isCompleted ? 'bg-vibrant-green' : 'bg-vibrant-yellow'
+                          }`}
+                          style={{ width: `${(p.completedQuestions / p.totalQuestions) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Homework Tracking Bar */}
+          <div className="bg-white rounded-[2rem] border-4 border-orange-400 p-6 shadow-sm space-y-4">
+            <h3 className="font-extrabold text-slate-800 text-lg flex items-center gap-2">
+              <span className="text-xl animate-bounce">📚</span>
+              Thanh theo dõi bài tập về nhà
+            </h3>
+
+            <div className="space-y-3 max-h-[148px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-orange-200">
+              {sortedMyAssignments.length === 0 ? (
+                <div className="p-8 text-center bg-vibrant-bg/40 border border-dashed rounded-[1.5rem] text-sm font-semibold text-slate-400">
+                  🦛 Em chưa được giao bài tập về nhà nào cả!
+                </div>
+              ) : (
+                sortedMyAssignments.map((h, idx) => {
+                  const isCurrentActive = new Date().getTime() <= new Date(h.deadline).getTime();
+                  const prog = homeworkProgress.find(p => 
+                    p.lessonId === h.lessonId && 
+                    p.homeworkId === h.id
+                  );
+
+                  let statusText = 'Chưa làm ❌';
+                  let statusClass = 'text-rose-600 bg-rose-50 border-rose-200';
+                  
+                  if (prog) {
+                    const percent = prog.totalQuestions > 0 ? (prog.correctAnswers / prog.totalQuestions) * 100 : 0;
+                    if (percent >= 90) {
+                      statusText = `Đạt (${Math.round(percent)}%) ✅`;
+                      statusClass = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+                    } else {
+                      if (!isCurrentActive) {
+                        statusText = `Chưa đạt (${Math.round(percent)}%) ❌`;
+                        statusClass = 'text-rose-600 bg-rose-50 border-rose-200';
+                      } else {
+                        statusText = `Chưa đạt (${Math.round(percent)}%) ⚠️`;
+                        statusClass = 'text-amber-700 bg-amber-50 border-amber-200';
+                      }
+                    }
+                  } else {
+                    if (!isCurrentActive) {
+                      statusText = 'Quá hạn/Chưa làm ⏰';
+                      statusClass = 'text-slate-500 bg-slate-100 border-slate-200';
+                    }
+                  }
+
+                  return (
+                    <div key={h.id || idx} className={`p-4 border-2 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 transition-all ${
+                      isCurrentActive ? 'border-orange-300 bg-orange-50/25' : 'border-slate-100 bg-slate-50/30'
+                    }`}>
+                      <div className="text-left space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-extrabold text-xs text-slate-800">
+                            {h.lessonTitle}
+                          </span>
+                          {isCurrentActive && (
+                            <span className="px-1.5 py-0.5 text-[8px] bg-sky-500 text-white font-black rounded uppercase animate-pulse">
+                              Đang mở
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-bold font-display">
+                          Giao: {new Date(h.assignedAt).toLocaleDateString('vi-VN')} {new Date(h.assignedAt).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})}
+                          {!isCurrentActive && <span className="text-rose-500 ml-1.5 font-bold">(Đã hết hạn ⏰)</span>}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 self-stretch sm:self-auto justify-between sm:justify-end">
+                        <span className={`px-2.5 py-1 text-[10px] font-black border rounded-lg shrink-0 ${statusClass}`}>
+                          {statusText}
+                        </span>
+                        {isCurrentActive && (
+                          <button
+                            type="button"
+                            onClick={() => onStartHomework(h.lessonId, h.id)}
+                            className="px-2.5 py-1 bg-sky-500 hover:bg-sky-600 border border-sky-400 text-white text-[10px] font-black rounded-lg transition-colors cursor-pointer shrink-0"
+                          >
+                            Làm bài
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </div>
 

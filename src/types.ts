@@ -2,11 +2,11 @@ export interface User {
   id: string;
   username: string;
   nickname: string;
-  grade: number; // 3, 4, 5, 6, 7, 8
+  grade?: number; // 3, 4, 5, 6, 7, 8 (optional for teachers)
   school?: string;
   classroom?: string;
   createdAt: string;
-  role?: 'student' | 'teacher';
+  role?: 'student' | 'teacher' | 'admin';
 }
 
 export interface Question {
@@ -15,10 +15,16 @@ export interface Question {
   options: string[];
   correctIndex: number; // 0-based
   explanation: string;
-  category: 'hardware' | 'software' | 'network' | 'safety' | 'skills';
-  type?: 'choice' | 'drag_text' | 'drag_image_text';
+  grade?: number; // 3, 4, 5, 6, 7, 8 (associating with specific grades)
+  type?: 'choice' | 'drag_text' | 'drag_image_text' | 'table_match';
   leftTerms?: string[];
   leftImages?: string[];
+  // For custom table matching question types
+  headers?: string[];
+  rows?: string[];
+  correctAnswers?: number[];
+  tableFontSize?: 'sm' | 'md' | 'lg';
+  tableWidth?: 'compact' | 'normal' | 'wide';
 }
 
 export interface LessonProgress {
@@ -29,6 +35,11 @@ export interface LessonProgress {
   totalQuestions: number;
   isCompleted: boolean;
   lastUpdated: string;
+  lessonTitle?: string;
+}
+
+export interface HomeworkProgress extends LessonProgress {
+  homeworkId: string;
 }
 
 export interface ExamRecord {
@@ -39,6 +50,9 @@ export interface ExamRecord {
   totalQuestions: number;
   durationSeconds: number;
   createdAt: string;
+  isRevisionTest?: boolean;
+  lessonId?: string;
+  lessonTitle?: string;
 }
 
 export interface UserFile {
@@ -49,4 +63,5 @@ export interface UserFile {
   uploadedAt: string;
   downloadUrl?: string;
   storagePath?: string;
+  grade?: number | 'all';
 }

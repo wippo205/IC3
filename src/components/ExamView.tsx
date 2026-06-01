@@ -25,21 +25,14 @@ interface ExamViewProps {
 
 export default function ExamView({ grade, token, onBackToDashboard, onExamSaved }: ExamViewProps) {
   const getExamConfig = (g: number) => {
-    switch (g) {
-      case 3: return { qCount: 20, timeMins: 20 };
-      case 4: return { qCount: 25, timeMins: 25 };
-      case 5: return { qCount: 30, timeMins: 30 };
-      case 6: return { qCount: 45, timeMins: 45 }; // 45 questions, 45 mins
-      case 7: return { qCount: 40, timeMins: 45 }; // 40 questions, 45 mins
-      case 8: return { qCount: 40, timeMins: 45 };
-      default: return { qCount: 30, timeMins: 30 };
-    }
+    return { qCount: 45, timeMins: 45 }; // IC3 Exam Standard: exactly 45 questions, 45 minutes
   };
 
   const config = getExamConfig(grade);
   const [examStarted, setExamStarted] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [loading, setLoading] = useState(false);
   
   // Track user selected option for each question index
   const [userAnswers, setUserAnswers] = useState<Record<number, number>>({});
@@ -52,23 +45,115 @@ export default function ExamView({ grade, token, onBackToDashboard, onExamSaved 
   // Timer reference
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const [cheatType, setCheatType] = useState<'fullscreen' | 'tab' | 'blur' | null>(null);
+
+  useEffect(() => {
+    if (examStarted && !isSubmitted) {
+      // 1. Enter fullscreen auto
+      const enterFS = async () => {
+        try {
+          if (!document.fullscreenElement) {
+            await document.documentElement.requestFullscreen();
+          }
+        } catch (err) {
+          console.warn("Fullscreen request rejected or not supported:", err);
+        }
+      };
+      enterFS();
+
+      // 2. Setup listeners for anti-cheat and fullscreen compliance
+      const handleFullscreenChange = () => {
+        if (examStarted && !isSubmitted && !document.fullscreenElement) {
+          setCheatType('fullscreen');
+          setExamStarted(false);
+          setQuestions([]);
+        }
+      };
+
+      const handleVisibilityChange = () => {
+        if (examStarted && !isSubmitted && document.hidden) {
+          setCheatType('tab');
+          setExamStarted(false);
+          setQuestions([]);
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {});
+          }
+        }
+      };
+
+      const handleWindowBlur = () => {
+        if (examStarted && !isSubmitted) {
+          setCheatType('blur');
+          setExamStarted(false);
+          setQuestions([]);
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {});
+          }
+        }
+      };
+
+      document.addEventListener('fullscreenchange', handleFullscreenChange);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('blur', handleWindowBlur);
+
+      return () => {
+        document.removeEventListener('fullscreenchange', handleFullscreenChange);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('blur', handleWindowBlur);
+      };
+    }
+  }, [examStarted, isSubmitted]);
+
   // Load random questions from different lessons to make a comprehensive final exam
-  const handleStartExam = () => {
-    // Generate static seed for final exam based on exam initiation
-    // Combines elements from Lesson 1, 2, 3 to ensure standard distribution
+  const handleStartExam = async () => {
+    setLoading(true);
     const count = config.qCount;
-    const itemsPart1 = generateQuestionsForLesson(grade, 1, Math.ceil(count / 2));
-    const itemsPart2 = generateQuestionsForLesson(grade, 2, Math.floor(count / 2));
-    
-    // Shuffle and merge
-    const merged = [...itemsPart1, ...itemsPart2].slice(0, count);
-    
-    setQuestions(merged);
+    let selectedQuestions: Question[] = [];
+
+    try {
+      const qResp = await fetch('/api/questions', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const qData = await qResp.json();
+      if (qResp.ok && qData.success && Array.isArray(qData.questions)) {
+        // Filter questions by grade
+        const bankForGrade = qData.questions.filter((q: any) => !q.grade || Number(q.grade) === Number(grade));
+        
+        if (bankForGrade.length > 0) {
+          // Shuffle the grade specific database questions
+          const shuffledBank = [...bankForGrade].sort(() => 0.5 - Math.random());
+          if (shuffledBank.length >= count) {
+            selectedQuestions = shuffledBank.slice(0, count);
+          } else {
+            selectedQuestions = [...shuffledBank];
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch custom question bank:", err);
+    }
+
+    // No auto-add additions if custom questions exist in the database bank.
+    // We only generate mockup questions if the grade database is completely empty.
+    if (selectedQuestions.length === 0) {
+      const generated1 = generateQuestionsForLesson(grade, 1, Math.ceil(count / 2));
+      const generated2 = generateQuestionsForLesson(grade, 2, Math.floor(count / 2));
+      selectedQuestions = [...generated1, ...generated2].sort(() => 0.5 - Math.random()).slice(0, count);
+    }
+
+    // Map necessary fields to match Question schema exactly
+    const finalizedQuestions = selectedQuestions.map((q, idx) => ({
+      ...q,
+      id: q.id || `exam-${grade}-${idx}-${Date.now()}`
+    }));
+
+    setQuestions(finalizedQuestions);
     setUserAnswers({});
     setCurrentIndex(0);
     setTimeLeft(config.timeMins * 60);
-    setExamStarted(true);
     setIsSubmitted(false);
+    setExamStarted(true);
+    setLoading(false);
   };
 
   // Countdown effect
@@ -123,9 +208,9 @@ export default function ExamView({ grade, token, onBackToDashboard, onExamSaved 
       }
     });
 
-    const percent = Math.round((corrects / questions.length) * 100);
+    const scorePoints = Math.round((corrects / questions.length) * 1000);
     setCorrectCount(corrects);
-    setScorePercentage(percent);
+    setScorePercentage(scorePoints); // Store full 0-1000 points
     setIsSubmitted(true);
 
     // Save record to database
@@ -139,10 +224,13 @@ export default function ExamView({ grade, token, onBackToDashboard, onExamSaved 
         },
         body: JSON.stringify({
           grade,
-          score: percent,
+          score: scorePoints, // Save the 1000-based points
           correctCount: corrects,
           totalQuestions: questions.length,
-          durationSeconds: (config.timeMins * 60) - timeLeft
+          durationSeconds: (config.timeMins * 60) - timeLeft,
+          isRevisionTest: false,
+          lessonId: `exam_final_grade_${grade}`,
+          lessonTitle: `Đề thi thử tổng hợp IC3 Lớp ${grade}`
         })
       });
       onExamSaved();
@@ -172,9 +260,9 @@ export default function ExamView({ grade, token, onBackToDashboard, onExamSaved 
 
           <div>
             <span className="p-2 py-1 bg-vibrant-blue/10 text-vibrant-blue font-black rounded-full text-xs uppercase tracking-wider">Phòng Thi Chính Thức</span>
-            <h2 className="text-3xl font-black font-display text-slate-800 mt-2">Bài Kiểm Tra IC3 Lớp {grade} 🏆</h2>
+            <h2 className="text-3xl font-black font-display text-slate-800 mt-2">Đề Thi Tin Học IC3 Lớp {grade} 🏆</h2>
             <p className="text-sm font-bold text-slate-400 mt-2">
-              Hãy chứng minh năng lực tin học IC3 của em thông qua bài kiểm tra toàn diện này!
+              Hãy chứng minh năng lực tin học IC3 của em thông qua đề thi đánh giá toàn diện này!
             </p>
           </div>
 
@@ -188,8 +276,8 @@ export default function ExamView({ grade, token, onBackToDashboard, onExamSaved 
               <span className="text-xs text-slate-400 font-bold">THỜI GIAN LÀM</span>
             </div>
             <div>
-              <span className="block text-2xl font-black text-vibrant-blue font-display">100 điểm</span>
-              <span className="text-xs text-slate-400 font-bold">THANG ĐIỂM</span>
+              <span className="block text-2xl font-black text-vibrant-blue font-display">1000 điểm</span>
+              <span className="text-xs text-slate-400 font-bold">THANG ĐIỂM IC3</span>
             </div>
           </div>
 
@@ -217,10 +305,20 @@ export default function ExamView({ grade, token, onBackToDashboard, onExamSaved 
               Quay lại Dashboard
             </button>
             <button
+              disabled={loading}
               onClick={handleStartExam}
-              className="flex-1 py-4 bg-vibrant-blue hover:bg-vibrant-blue/90 text-white font-black rounded-full shadow-[0_4px_0_#2B69C1] hover:translate-y-0.5 transition-all cursor-pointer text-sm"
+              className={`flex-1 py-4 text-white font-black rounded-full shadow-[0_4px_0_#2B69C1] hover:translate-y-0.5 transition-all text-sm cursor-pointer flex items-center justify-center gap-2 ${
+                loading ? 'bg-vibrant-blue/60 cursor-not-allowed' : 'bg-vibrant-blue hover:bg-vibrant-blue/90'
+              }`}
             >
-              Bắt đầu thi ngay! 🎯
+              {loading ? (
+                <>
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                  Đang thiết lập bộ đề thi...
+                </>
+              ) : (
+                'Bắt đầu thi ngay! 🎯'
+              )}
             </button>
           </div>
         </div>
@@ -256,8 +354,6 @@ export default function ExamView({ grade, token, onBackToDashboard, onExamSaved 
             <div className="bg-white rounded-[2.5rem] border-4 border-vibrant-blue p-8 shadow-sm relative overflow-hidden">
               <div className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-widest mb-3">
                 <span>Câu số {currentIndex + 1} của {questions.length}</span>
-                <span className="h-4 w-0.5 bg-slate-200" />
-                <span>{currentQuestion?.category}</span>
               </div>
               <h3 className="text-xl font-black font-display text-slate-800 leading-snug">
                 {currentQuestion?.text}
@@ -392,7 +488,7 @@ export default function ExamView({ grade, token, onBackToDashboard, onExamSaved 
               </div>
               <div className="text-center">
                 <span className="block text-2xl font-black text-vibrant-blue font-display">
-                  {scorePercentage >= 50 ? 'ĐẠT ✅' : 'HỎNG ❌'}
+                  {scorePercentage >= 700 ? 'ĐẠT ✅' : 'CHƯA ĐẠT ❌'}
                 </span>
                 <span className="text-[10px] text-slate-400 font-black uppercase">Trạng thái</span>
               </div>
@@ -400,20 +496,20 @@ export default function ExamView({ grade, token, onBackToDashboard, onExamSaved 
 
             {/* Achievement star visual depending on score */}
             <div className="flex justify-center gap-2 text-3xl select-none">
-              <span className={scorePercentage >= 35 ? "opacity-100" : "opacity-30"}>⭐</span>
-              <span className={scorePercentage >= 70 ? "opacity-100 transition-all scale-125 mx-2 font-bold" : "opacity-30"}>⭐</span>
-              <span className={scorePercentage >= 90 ? "opacity-100" : "opacity-30"}>⭐</span>
+              <span className={scorePercentage >= 350 ? "opacity-100" : "opacity-30"}>⭐</span>
+              <span className={scorePercentage >= 700 ? "opacity-100 transition-all scale-125 mx-2 font-bold" : "opacity-30"}>⭐</span>
+              <span className={scorePercentage >= 900 ? "opacity-100" : "opacity-30"}>⭐</span>
             </div>
 
             {/* Custom feedback message */}
             <div className="p-4 bg-[#FFEDD5] border-2 border-vibrant-yellow text-[#D97706] text-sm font-bold rounded-[2rem] max-w-md mx-auto">
-              🦛 <strong>Wippo nhận xét:</strong> {scorePercentage === 100 
-                ? 'Xuất chúng vô song! Em là thiên tài tin học IC3 chính hiệu!' 
-                : scorePercentage >= 80 
-                  ? 'Tuyệt đỉnh học giỏi! Chứng nhận IC3 đang rất gần em rồi!'
-                  : scorePercentage >= 50 
-                    ? 'Làm tốt lắm! Em đã vượt qua kỳ thi để đạt xếp hạng tốt!'
-                    : 'Đừng buồn nhé! Hãy cùng ôn luyện lại các bài tập để giành điểm cao hơn ở lần sau nhé! Wippo tin em làm được! 💪'
+              🦛 <strong>Wippo nhận xét:</strong> {scorePercentage === 1000 
+                ? 'Xuất chúng vô song! Em đạt điểm tuyệt đối 1000/1000 rồi! Đích thực là thiên tài tin học IC3!' 
+                : scorePercentage >= 800 
+                  ? 'Tuyệt đỉnh học giỏi! Đạt điểm số xuất sắc chuẩn quốc tế! Em tự tin đi thi IC3 thật rồi đó!'
+                  : scorePercentage >= 700 
+                    ? 'Làm tốt lắm. Em đã vượt qua mốc điểm 700 và ĐẠT chuẩn kỳ thi IC3 quốc tế!'
+                    : 'Đừng nản chí nhé con yêu! Ôn luyện thêm các bài tập với Wippo để vượt mốc 700 điểm ở lần thi tới nha! 💪'
               }
             </div>
 
@@ -494,6 +590,41 @@ export default function ExamView({ grade, token, onBackToDashboard, onExamSaved 
           </div>
         </div>
       )}
+
+      {/* Security alert modal for cheating regulation */}
+      <AnimatePresence>
+        {cheatType && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] max-w-md w-full border-2 border-red-500/30 text-center shadow-2xl relative"
+            >
+              <div className="w-16 h-16 bg-red-50 dark:bg-red-950/40 text-red-500 rounded-full flex items-center justify-center mx-auto mb-5 text-3xl font-black">
+                ⚠️
+              </div>
+              <h3 className="text-xl font-black text-slate-900 dark:text-white mb-3">
+                Phát Hiện Vi Phạm Quy Chế
+              </h3>
+              <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
+                {cheatType === 'fullscreen' && 
+                  "Em đã tự ý THOÁT CHẾ ĐỘ TOÀN MÀN HÌNH trong lúc làm bài thi. Để đảm bảo tính trung thực, kết quả làm bài thi này của em đã bị hủy bỏ."}
+                {cheatType === 'tab' && 
+                  "Em đã CHUYỂN TAB hoặc ẨN TRÌNH DUYỆT trong lúc làm bài thi. Để đảm bảo tính trung thực, kết quả làm bài thi này của em đã bị hủy bỏ."}
+                {cheatType === 'blur' && 
+                  "Em đã NHẤP CHUỘT RA NGOÀI hoặc CHUYỂN ĐỔI ỨNG DỤNG khác. Để đảm bảo tính trung thực, kết quả làm bài thi này của em đã bị hủy bỏ."}
+              </p>
+              <button
+                onClick={() => setCheatType(null)}
+                className="w-full py-4 bg-red-500 hover:bg-red-600 text-white font-black rounded-2xl shadow-lg shadow-red-500/20 transition-all cursor-pointer text-sm"
+              >
+                Trở về và thực hiện lại bài thi 🔄
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

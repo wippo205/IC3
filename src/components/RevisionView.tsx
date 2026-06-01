@@ -29,9 +29,23 @@ interface RevisionViewProps {
   onBackToDashboard: () => void;
   onProgressUpdated: () => void;
   userRole?: 'student' | 'teacher';
+  initialLessonId?: string | null;
+  homeworkId?: string | null;
+  isHomeworkMode?: boolean;
+  onExitHomework?: () => void;
 }
 
-export default function RevisionView({ grade, token, onBackToDashboard, onProgressUpdated, userRole = 'student' }: RevisionViewProps) {
+export default function RevisionView({ 
+  grade, 
+  token, 
+  onBackToDashboard, 
+  onProgressUpdated, 
+  userRole = 'student', 
+  initialLessonId = null,
+  homeworkId = null,
+  isHomeworkMode = false,
+  onExitHomework
+}: RevisionViewProps) {
   // Curriculum status
   const [lessons, setLessons] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,11 +60,46 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
 
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
   const [viewTab, setViewTab] = useState<'study' | 'edit'>('study');
+  const [cheatType, setCheatType] = useState<'fullscreen' | 'tab' | 'blur' | null>(null);
+
+  const handleExitLesson = () => {
+    setSelectedLessonId(null);
+    onExitHomework?.();
+  };
+
+  // Active playing questions: shuffled version for students
+  const [playQuestions, setPlayQuestions] = useState<Question[]>([]);
 
   // New Lesson form states
   const [showAddLessonForm, setShowAddLessonForm] = useState(false);
   const [newLessonTitle, setNewLessonTitle] = useState('');
   const [newLessonEmoji, setNewLessonEmoji] = useState('💻');
+  const [newLessonStartIdx, setNewLessonStartIdx] = useState(1);
+  const [newLessonEndIdx, setNewLessonEndIdx] = useState(10);
+
+  // Edit Lesson range states
+  const [editLessonTitle, setEditLessonTitle] = useState('');
+  const [editLessonEmoji, setEditLessonEmoji] = useState('💻');
+  const [editLessonStartIdx, setEditLessonStartIdx] = useState(1);
+  const [editLessonEndIdx, setEditLessonEndIdx] = useState(10);
+
+  // Bank questions state fetched on mount
+  const [bankQuestions, setBankQuestions] = useState<Question[]>([]);
+
+  // Filter questions that belong to the current grade (or have no grade which are general/base questions)
+  const gradeQuestions = bankQuestions.filter(q => !q.grade || Number(q.grade) === Number(grade));
+
+  useEffect(() => {
+    if (selectedLessonId) {
+      const active = lessons.find(l => l.id === selectedLessonId);
+      if (active) {
+        setEditLessonTitle(active.title || '');
+        setEditLessonEmoji(active.emoji || '📖');
+        setEditLessonStartIdx(active.startIdx !== undefined ? active.startIdx : 1);
+        setEditLessonEndIdx(active.endIdx !== undefined ? active.endIdx : Math.min(gradeQuestions.length, 10));
+      }
+    }
+  }, [selectedLessonId, lessons, gradeQuestions.length]);
 
   // Question editing form states
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
@@ -63,9 +112,8 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
   const [qDraftOptionC, setQDraftOptionC] = useState('');
   const [qDraftOptionD, setQDraftOptionD] = useState('');
   const [qDraftCorrectIndex, setQDraftCorrectIndex] = useState(0);
-  const [qDraftCategory, setQDraftCategory] = useState<'hardware' | 'software' | 'network' | 'safety' | 'skills'>('hardware');
   const [qDraftExplanation, setQDraftExplanation] = useState('');
-  const [qDraftType, setQDraftType] = useState<'choice' | 'drag_text' | 'drag_image_text'>('choice');
+  const [qDraftType, setQDraftType] = useState<'choice' | 'drag_text' | 'drag_image_text' | 'table_match'>('choice');
   const [qDraftLeftA, setQDraftLeftA] = useState('');
   const [qDraftLeftB, setQDraftLeftB] = useState('');
   const [qDraftLeftC, setQDraftLeftC] = useState('');
@@ -75,17 +123,128 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
   const [qDraftImageC, setQDraftImageC] = useState('');
   const [qDraftImageD, setQDraftImageD] = useState('');
 
+  // Customizable table matching question draft states
+  const [qDraftTableHeaders, setQDraftTableHeaders] = useState<string[]>(['Nhập', 'Xuất']);
+  const [qDraftTableRows, setQDraftTableRows] = useState<string[]>(['Bàn phím', 'Scanner', 'Màn hình']);
+  const [qDraftTableCorrectAnswers, setQDraftTableCorrectAnswers] = useState<number[]>([0, 0, 1]);
+  const [qDraftTableFontSize, setQDraftTableFontSize] = useState<'sm' | 'md' | 'lg'>('md');
+  const [qDraftTableWidth, setQDraftTableWidth] = useState<'compact' | 'normal' | 'wide'>('normal');
+
+  // Track user selections for table matching cells per question
+  const [tableAnswers, setTableAnswers] = useState<Record<number, Record<number, number>>>({});
+
   // Active quiz playing states
   const [currentIndex, setCurrentIndex] = useState(0);
   const [userAnswers, setUserAnswers] = useState<Record<number, number>>({});
   const [showFinishedCard, setShowFinishedCard] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
+  const [isTestMode, setIsTestMode] = useState(false);
+  const [testMatchingAnswers, setTestMatchingAnswers] = useState<Record<number, Record<number, string | null>>>({});
+  const [testAvailableCards, setTestAvailableCards] = useState<Record<number, string[]>>({});
+
+  useEffect(() => {
+    if (isTeacherMode) return;
+
+    if (selectedLessonId !== null && viewTab === 'study' && !showFinishedCard) {
+      // 1. Automatically request fullscreen
+      const enterFullscreen = async () => {
+        try {
+          if (!document.fullscreenElement) {
+            await document.documentElement.requestFullscreen();
+          }
+        } catch (err) {
+          console.warn("Fullscreen request rejected or not supported:", err);
+        }
+      };
+      enterFullscreen();
+
+      // 2. Setup anti-cheating state listeners
+      const handleFullscreenChange = () => {
+        // If they exited fullscreen during revision, reset and show alert
+        if (selectedLessonId !== null && viewTab === 'study' && !showFinishedCard && !document.fullscreenElement) {
+          setCheatType('fullscreen');
+          setSelectedLessonId(null);
+        }
+      };
+
+      const handleVisibilityChange = () => {
+        if (selectedLessonId !== null && viewTab === 'study' && !showFinishedCard && document.hidden) {
+          setCheatType('tab');
+          setSelectedLessonId(null);
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {});
+          }
+        }
+      };
+
+      const handleWindowBlur = () => {
+        if (selectedLessonId !== null && viewTab === 'study' && !showFinishedCard) {
+          setCheatType('blur');
+          setSelectedLessonId(null);
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {});
+          }
+        }
+      };
+
+      document.addEventListener('fullscreenchange', handleFullscreenChange);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('blur', handleWindowBlur);
+
+      return () => {
+        document.removeEventListener('fullscreenchange', handleFullscreenChange);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('blur', handleWindowBlur);
+      };
+    }
+  }, [selectedLessonId, viewTab, showFinishedCard, isTeacherMode]);
 
   // Matching Question interactive states
   const [matchingSlots, setMatchingSlots] = useState<Record<number, string | null>>({ 0: null, 1: null, 2: null, 3: null });
   const [availableCards, setAvailableCards] = useState<string[]>([]);
   const [selectedCardToPlace, setSelectedCardToPlace] = useState<string | null>(null);
   const [isMatchingCorrect, setIsMatchingCorrect] = useState<boolean | null>(null);
+  const [dragOverSlot, setDragOverSlot] = useState<number | null>(null);
+  const [isDraggingOverAvailable, setIsDraggingOverAvailable] = useState<boolean>(false);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const dragYRef = React.useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    let animationFrameId: number;
+    const tick = () => {
+      if (dragYRef.current !== null) {
+        const y = dragYRef.current;
+        const threshold = 150; // pixels to top/bottom viewport where auto-scroll triggers
+        const maxSpeed = 16;
+        const height = window.innerHeight;
+
+        if (y < threshold) {
+          const ratio = (threshold - y) / threshold;
+          const speed = -Math.ceil(ratio * maxSpeed);
+          window.scrollBy(0, speed);
+        } else if (y > height - threshold) {
+          const ratio = (y - (height - threshold)) / threshold;
+          const speed = Math.ceil(ratio * maxSpeed);
+          window.scrollBy(0, speed);
+        }
+      }
+      animationFrameId = requestAnimationFrame(tick);
+    };
+
+    const handleDragOver = (e: DragEvent) => {
+      dragYRef.current = e.clientY;
+    };
+
+    window.addEventListener('dragover', handleDragOver);
+    animationFrameId = requestAnimationFrame(tick);
+
+    return () => {
+      window.removeEventListener('dragover', handleDragOver);
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [isDragging]);
 
   // Custom confirmation modal states
   const [customConfirm, setCustomConfirm] = useState<{
@@ -140,6 +299,19 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
       } else {
         setErrorMsg(data.error || 'Không thể tải chương trình học của khối lớp này.');
       }
+
+      // Pre-fetch central question bank details
+      try {
+        const qResp = await fetch('/api/questions', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const qData = await qResp.json();
+        if (qResp.ok && qData.success) {
+          setBankQuestions(qData.questions || []);
+        }
+      } catch (err) {
+        console.error('Failed to pre-fetch bank questions:', err);
+      }
     } catch (err) {
       setErrorMsg('Mất kết nối với máy chủ học tập.');
     } finally {
@@ -148,14 +320,135 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
   };
 
   useEffect(() => {
-    loadLessons();
-    setSelectedLessonId(null);
+    const init = async () => {
+      await loadLessons();
+      if (initialLessonId) {
+        setSelectedLessonId(initialLessonId);
+      } else {
+        setSelectedLessonId(null);
+      }
+    };
+    init();
     setShowFinishedCard(false);
-  }, [grade]);
+  }, [grade, initialLessonId]);
+
+  // Save edited lesson range and titles configurations
+  const handleSaveLessonConfig = async () => {
+    if (!editLessonTitle.trim()) {
+      triggerAlert('Vui lòng nhập tên bài học!', 'error');
+      return;
+    }
+    const start = Math.max(1, Number(editLessonStartIdx) || 1);
+    const end = Math.min(gradeQuestions.length || 100, Math.max(start, Number(editLessonEndIdx) || start));
+    const rangeQs = gradeQuestions.slice(start - 1, end);
+
+    const updatedObj = {
+      id: selectedLessonId,
+      grade,
+      title: editLessonTitle.trim(),
+      emoji: editLessonEmoji,
+      startIdx: start,
+      endIdx: end,
+      questions: rangeQs,
+      qCount: rangeQs.length,
+      isCustom: true
+    };
+
+    try {
+      const resp = await fetch('/api/lessons/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ grade, lesson: updatedObj })
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        setLessons(data.lessons || []);
+        triggerAlert('Đã lưu cấu hình bài học thành công!', 'success');
+        setViewTab('study'); // switch back smoothly
+      } else {
+        triggerAlert('Không thể lưu cấu hình: ' + (data.error || ''), 'error');
+      }
+    } catch (err) {
+      triggerAlert('Lỗi kết nối máy chủ.', 'error');
+    }
+  };
 
   // Find the active lesson details
   const activeLesson = lessons.find(l => l.id === selectedLessonId);
   const questions = activeLesson?.questions || [];
+  const quizQuestions = playQuestions.length > 0 ? playQuestions : questions;
+
+  // Set and shuffle questions for play mode on start
+  const handleShuffleQuestions = () => {
+    if (activeLesson) {
+      const original = activeLesson.questions || [];
+      const shuffled = [...original]
+        .map(q => ({ q, sort: Math.random() }))
+        .sort((a, b) => a.sort - b.sort)
+        .map(({ q }) => {
+          const optionsCopy = q.options ? [...q.options] : [];
+          
+          if (!q.type || q.type === 'choice') {
+            const correctOpt = optionsCopy[q.correctIndex] || '';
+            const shufOpts = [...optionsCopy]
+              .map(o => ({ o, sort: Math.random() }))
+              .sort((a, b) => a.sort - b.sort)
+              .map(({ o }) => o);
+            const newCorrectIdx = shufOpts.indexOf(correctOpt);
+            return {
+              ...q,
+              options: shufOpts,
+              correctIndex: newCorrectIdx >= 0 ? newCorrectIdx : 0
+            };
+          } else if (q.type === 'drag_text' || q.type === 'drag_image_text') {
+            const pairings = optionsCopy.map((option, i) => ({
+              leftTerm: q.leftTerms?.[i] || '',
+              leftImage: q.leftImages?.[i] || '',
+              option: option
+            }));
+            const shufPairings = [...pairings]
+              .map(p => ({ p, sort: Math.random() }))
+              .sort((a, b) => a.sort - b.sort)
+              .map(({ p }) => p);
+            return {
+              ...q,
+              options: shufPairings.map(p => p.option),
+              leftTerms: q.leftTerms ? shufPairings.map(p => p.leftTerm) : undefined,
+              leftImages: q.leftImages ? shufPairings.map(p => p.leftImage) : undefined
+            };
+          } else if (q.type === 'table_match') {
+            const rowsCopy = q.rows ? [...q.rows] : [];
+            const correctCopy = q.correctAnswers ? [...q.correctAnswers] : [];
+            const pairings = rowsCopy.map((row, i) => ({
+              row,
+              correctAnswer: correctCopy[i] !== undefined ? correctCopy[i] : 0
+            }));
+            const shufPairings = [...pairings]
+              .map(p => ({ p, sort: Math.random() }))
+              .sort((a, b) => a.sort - b.sort)
+              .map(({ p }) => p);
+            return {
+              ...q,
+              rows: shufPairings.map(p => p.row),
+              correctAnswers: shufPairings.map(p => p.correctAnswer)
+            };
+          }
+          return q;
+        });
+      setPlayQuestions(shuffled);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedLessonId !== null && activeLesson) {
+      handleShuffleQuestions();
+    } else {
+      setPlayQuestions([]);
+    }
+  }, [selectedLessonId, activeLesson?.id]);
 
   // Reset quiz progress whenever lesson changes
   useEffect(() => {
@@ -163,28 +456,67 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
       setCurrentIndex(0);
       setUserAnswers({});
       setShowFinishedCard(false);
+      setTestMatchingAnswers({});
+      setTestAvailableCards({});
+      setTableAnswers({});
     }
   }, [selectedLessonId]);
 
   // Initialize matching card elements whenever question or lesson changes
   useEffect(() => {
-    const q = questions[currentIndex];
+    const q = quizQuestions[currentIndex];
     if (q && (q.type === 'drag_text' || q.type === 'drag_image_text')) {
-      const initialOptions = [...q.options];
-      const shuffled = initialOptions
-        .map(value => ({ value, sort: Math.random() }))
-        .sort((a, b) => a.sort - b.sort)
-        .map(({ value }) => value);
-      
-      setAvailableCards(shuffled);
-      setMatchingSlots({ 0: null, 1: null, 2: null, 3: null });
-      setSelectedCardToPlace(null);
-      setIsMatchingCorrect(null);
+      if (isTestMode && testMatchingAnswers[currentIndex]) {
+        setMatchingSlots(testMatchingAnswers[currentIndex]);
+        setAvailableCards(testAvailableCards[currentIndex] || []);
+        setIsMatchingCorrect(null);
+        setSelectedCardToPlace(null);
+      } else {
+        const initialOptions = [...q.options];
+        const shuffled = initialOptions
+          .map(value => ({ value, sort: Math.random() }))
+          .sort((a, b) => a.sort - b.sort)
+          .map(({ value }) => value);
+        
+        setAvailableCards(shuffled);
+        setMatchingSlots({ 0: null, 1: null, 2: null, 3: null });
+        setSelectedCardToPlace(null);
+        setIsMatchingCorrect(null);
+      }
     }
-  }, [currentIndex, selectedLessonId, questions]);
+  }, [currentIndex, selectedLessonId, quizQuestions, isTestMode]);
+
+  // Synchronize matching answers and available cards to cache and silently evaluate answered status during test mode
+  useEffect(() => {
+    if (isTestMode && selectedLessonId !== null) {
+      const q = quizQuestions[currentIndex];
+      if (q && (q.type === 'drag_text' || q.type === 'drag_image_text')) {
+        setTestMatchingAnswers(prev => ({ ...prev, [currentIndex]: matchingSlots }));
+        setTestAvailableCards(prev => ({ ...prev, [currentIndex]: availableCards }));
+
+        // Silently evaluate correctness
+        const isCorrect0 = matchingSlots[0] === q.options[0];
+        const isCorrect1 = matchingSlots[1] === q.options[1];
+        const isCorrect2 = matchingSlots[2] === q.options[2];
+        const isCorrect3 = matchingSlots[3] === q.options[3];
+        const fullyCorrect = isCorrect0 && isCorrect1 && isCorrect2 && isCorrect3;
+
+        const filledCount = Object.values(matchingSlots).filter(v => v !== null).length;
+        if (filledCount === 4) {
+          setUserAnswers(prev => ({ ...prev, [currentIndex]: fullyCorrect ? 100 : 200 }));
+        } else {
+          setUserAnswers(prev => {
+            const next = { ...prev };
+            delete next[currentIndex];
+            return next;
+          });
+        }
+      }
+    }
+  }, [matchingSlots, availableCards, isTestMode, currentIndex, selectedLessonId]);
 
   const handlePlaceCardInSlot = (cardText: string, slotIndex: number) => {
-    if (userAnswers[currentIndex] !== undefined) return; 
+    if (userAnswers[currentIndex] !== undefined && !isTestMode) return; 
     
     const currentSlotCard = matchingSlots[slotIndex];
     let newAvailable = [...availableCards].filter(c => c !== cardText);
@@ -206,7 +538,7 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
   };
 
   const handleRemoveCardFromSlot = (slotIndex: number) => {
-    if (userAnswers[currentIndex] !== undefined) return;
+    if (userAnswers[currentIndex] !== undefined && !isTestMode) return;
     const currentSlotCard = matchingSlots[slotIndex];
     if (!currentSlotCard) return;
     
@@ -226,25 +558,27 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
 
     const correctCount = Object.keys(updatedAnswers).reduce((acc, qIdx) => {
       const parsedIdx = Number(qIdx);
-      const q = questions[parsedIdx];
+      const q = quizQuestions[parsedIdx];
       if (!q) return acc;
       const val = updatedAnswers[parsedIdx];
-      const checkCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text') ? val === 100 : val === q.correctIndex;
+      const checkCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text' || q.type === 'table_match') ? val === 100 : val === q.correctIndex;
       return checkCorrect ? acc + 1 : acc;
     }, 0);
 
     const answeredCount = Object.keys(updatedAnswers).length;
-    saveProgressToServer(
-      selectedLessonId!,
-      answeredCount,
-      correctCount,
-      questions.length,
-      answeredCount === questions.length
-    );
+    if (!isTestMode) {
+      saveProgressToServer(
+        selectedLessonId!,
+        answeredCount,
+        correctCount,
+        quizQuestions.length,
+        answeredCount === quizQuestions.length
+      );
+    }
   };
 
   const handleCheckMatchingResult = () => {
-    const q = questions[currentIndex];
+    const q = quizQuestions[currentIndex];
     if (!q) return;
     
     const filledCount = Object.values(matchingSlots).filter(v => v !== null).length;
@@ -265,31 +599,114 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
     handleMatchQuestionAnswer(fullyCorrect);
   };
 
-  // Handle quiz options selection (for multiple choice)
-  const handleSelectOption = (optionIndex: number) => {
-    if (!activeLesson) return;
-    if (userAnswers[currentIndex] !== undefined) return; // already answered
- 
-    const updatedAnswers = { ...userAnswers, [currentIndex]: optionIndex };
+  const handleSelectTableCell = (rowIdx: number, colIdx: number) => {
+    const q = quizQuestions[currentIndex];
+    const isAnswered = isTestMode ? false : userAnswers[currentIndex] !== undefined;
+    if (isAnswered) return;
+
+    const selections = tableAnswers[currentIndex] || {};
+    const nextSelections = { ...selections, [rowIdx]: colIdx };
+    setTableAnswers(prev => ({
+      ...prev,
+      [currentIndex]: nextSelections
+    }));
+
+    // In test mode, evaluate silently if all rows are answered
+    if (isTestMode && q && q.type === 'table_match') {
+      const rowsCount = q.rows?.length || 0;
+      const filledCount = Object.keys(nextSelections).length;
+      if (filledCount === rowsCount) {
+        let isAllCorrect = true;
+        for (let i = 0; i < rowsCount; i++) {
+          if (nextSelections[i] !== q.correctAnswers?.[i]) {
+            isAllCorrect = false;
+            break;
+          }
+        }
+        setUserAnswers(prev => ({ ...prev, [currentIndex]: isAllCorrect ? 100 : 200 }));
+      } else {
+        setUserAnswers(prev => {
+          const next = { ...prev };
+          delete next[currentIndex];
+          return next;
+        });
+      }
+    }
+  };
+
+  const handleCheckTableMatchResult = () => {
+    const q = quizQuestions[currentIndex];
+    if (!q || q.type !== 'table_match') return;
+
+    const selections = tableAnswers[currentIndex] || {};
+    const rowsCount = q.rows?.length || 0;
+
+    if (Object.keys(selections).length < rowsCount) {
+      triggerAlert('Vui lòng chọn đầy đủ đáp án cho tất cả các hàng trong bảng!', 'info');
+      return;
+    }
+
+    let isAllCorrect = true;
+    for (let i = 0; i < rowsCount; i++) {
+      if (selections[i] !== q.correctAnswers?.[i]) {
+        isAllCorrect = false;
+        break;
+      }
+    }
+
+    const correctAnsVal = isAllCorrect ? 100 : 200;
+    const updatedAnswers = { ...userAnswers, [currentIndex]: correctAnsVal };
     setUserAnswers(updatedAnswers);
- 
+
+    // Sync progress to server for active study mode
     const correctCount = Object.keys(updatedAnswers).reduce((acc, qIdx) => {
       const parsedIdx = Number(qIdx);
-      const q = questions[parsedIdx];
+      const q = quizQuestions[parsedIdx];
       if (!q) return acc;
       const val = updatedAnswers[parsedIdx];
-      const checkCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text') ? val === 100 : val === q.correctIndex;
+      const checkCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text' || q.type === 'table_match') ? val === 100 : val === q.correctIndex;
       return checkCorrect ? acc + 1 : acc;
     }, 0);
- 
+
     const answeredCount = Object.keys(updatedAnswers).length;
     saveProgressToServer(
       selectedLessonId!,
       answeredCount,
       correctCount,
-      questions.length,
-      answeredCount === questions.length
+      quizQuestions.length,
+      answeredCount === quizQuestions.length
     );
+
+    triggerAlert(isAllCorrect ? 'Tuyệt vời! Toàn bộ bảng đã khớp chính xác! 🎉' : 'Rất tiếc, vẫn còn một số hàng chưa chính xác. Hãy tiếp tục cố gắng nhé!', isAllCorrect ? 'success' : 'error');
+  };
+
+  // Handle quiz options selection (for multiple choice)
+  const handleSelectOption = (optionIndex: number) => {
+    if (!activeLesson) return;
+    if (userAnswers[currentIndex] !== undefined && !isTestMode) return; // already answered
+ 
+    const updatedAnswers = { ...userAnswers, [currentIndex]: optionIndex };
+    setUserAnswers(updatedAnswers);
+ 
+    if (!isTestMode) {
+      const correctCount = Object.keys(updatedAnswers).reduce((acc, qIdx) => {
+        const parsedIdx = Number(qIdx);
+        const q = quizQuestions[parsedIdx];
+        if (!q) return acc;
+        const val = updatedAnswers[parsedIdx];
+        const checkCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text' || q.type === 'table_match') ? val === 100 : val === q.correctIndex;
+        return checkCorrect ? acc + 1 : acc;
+      }, 0);
+   
+      const answeredCount = Object.keys(updatedAnswers).length;
+      saveProgressToServer(
+        selectedLessonId!,
+        answeredCount,
+        correctCount,
+        quizQuestions.length,
+        answeredCount === quizQuestions.length
+      );
+    }
   };
 
   const saveProgressToServer = async (
@@ -301,20 +718,31 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
   ) => {
     setSavingProgress(true);
     try {
-      await fetch('/api/progress/update', {
+      const endpoint = isHomeworkMode && homeworkId ? '/api/homework-progress/update' : '/api/progress/update';
+      const payload = isHomeworkMode && homeworkId ? {
+        grade,
+        lessonId,
+        homeworkId,
+        completedQuestions: completed,
+        correctAnswers: correct,
+        totalQuestions: total,
+        isCompleted
+      } : {
+        grade,
+        lessonId,
+        completedQuestions: completed,
+        correctAnswers: correct,
+        totalQuestions: total,
+        isCompleted
+      };
+
+      await fetch(endpoint, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-          grade,
-          lessonId,
-          completedQuestions: completed,
-          correctAnswers: correct,
-          totalQuestions: total,
-          isCompleted
-        })
+        body: JSON.stringify(payload)
       });
       onProgressUpdated();
     } catch (err) {
@@ -325,9 +753,40 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
   };
 
   const handleNext = () => {
-    if (currentIndex < questions.length - 1) {
+    if (currentIndex < quizQuestions.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
+      if (isTestMode) {
+        // Compute correct count
+        const correctCount = totalCorrect;
+        const scoreVal = quizQuestions.length > 0 ? Math.round((correctCount / quizQuestions.length) * 100) : 0;
+
+        // Fetch to save exam
+        fetch('/api/exams/save', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            grade,
+            score: scoreVal,
+            correctCount: correctCount,
+            totalQuestions: quizQuestions.length,
+            durationSeconds: 0,
+            isRevisionTest: true,
+            lessonId: selectedLessonId,
+            lessonTitle: activeLesson?.title || 'Bài học ôn tập'
+          })
+        })
+        .then(res => res.json())
+        .then(() => {
+          onProgressUpdated(); // Reload both progress and exams!
+        })
+        .catch(err => {
+          console.error('Lỗi khi lưu kết quả bài kiểm tra ôn tập:', err);
+        });
+      }
       setShowFinishedCard(true);
     }
   };
@@ -343,10 +802,11 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
       'Ôn tập lại từ đầu',
       'Em có chắc muốn ôn tập lại bài này từ đầu không?',
       () => {
+        handleShuffleQuestions();
         setUserAnswers({});
         setCurrentIndex(0);
         setShowFinishedCard(false);
-        saveProgressToServer(selectedLessonId!, 0, 0, questions.length, false);
+        saveProgressToServer(selectedLessonId!, 0, 0, quizQuestions.length, false);
       }
     );
   };
@@ -388,21 +848,19 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
     e.preventDefault();
     if (!newLessonTitle.trim()) return;
 
+    const start = Math.max(1, Number(newLessonStartIdx) || 1);
+    const end = Math.min(gradeQuestions.length || 10, Math.max(start, Number(newLessonEndIdx) || start));
+    const selectedRangeQs = gradeQuestions.slice(start - 1, end);
+
     const newLessonObj = {
       id: `lesson_custom_${Date.now()}`,
       grade,
       title: newLessonTitle.trim(),
       emoji: newLessonEmoji,
-      questions: [
-        {
-          id: `q_${Date.now()}_1`,
-          text: 'Thiết bị nào sau đây là thiết bị thu nhận thông tin (đầu vào) của máy tính?',
-          options: ['Bàn phím và Chuột', 'Màn hình hiển thị', 'Máy in màu', 'Loa âm thanh'],
-          correctIndex: 0,
-          explanation: 'Bàn phím và chuột là thiết bị giúp đưa thông tin từ người dùng vào máy tính xử lý.',
-          category: 'hardware'
-        }
-      ],
+      startIdx: start,
+      endIdx: end,
+      questions: selectedRangeQs,
+      qCount: selectedRangeQs.length,
       isCustom: true
     };
 
@@ -419,6 +877,8 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
       if (resp.ok && data.success) {
         setLessons(data.lessons || []);
         setNewLessonTitle('');
+        setNewLessonStartIdx(1);
+        setNewLessonEndIdx(Math.min(gradeQuestions.length, 10));
         setShowAddLessonForm(false);
         triggerAlert('Đã thêm bài học ôn tập mới thành công!', 'success');
       } else {
@@ -471,7 +931,6 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
     setQDraftOptionC(q.options[2] || '');
     setQDraftOptionD(q.options[3] || '');
     setQDraftCorrectIndex(q.correctIndex);
-    setQDraftCategory(q.category || 'hardware');
     setQDraftExplanation(q.explanation);
     setQDraftType(q.type || 'choice');
     setQDraftLeftA(q.leftTerms?.[0] || '');
@@ -482,6 +941,21 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
     setQDraftImageB(q.leftImages?.[1] || '');
     setQDraftImageC(q.leftImages?.[2] || '');
     setQDraftImageD(q.leftImages?.[3] || '');
+
+    // Initialize customizable table matching values
+    if (q.type === 'table_match') {
+      setQDraftTableHeaders(q.headers || ['Nhập', 'Xuất']);
+      setQDraftTableRows(q.rows || ['Bàn phím', 'Scanner', 'Màn hình']);
+      setQDraftTableCorrectAnswers(q.correctAnswers || [0, 0, 1]);
+      setQDraftTableFontSize(q.tableFontSize || 'md');
+      setQDraftTableWidth(q.tableWidth || 'normal');
+    } else {
+      setQDraftTableHeaders(['Nhập', 'Xuất']);
+      setQDraftTableRows(['Bàn phím', 'Scanner', 'Màn hình']);
+      setQDraftTableCorrectAnswers([0, 0, 1]);
+      setQDraftTableFontSize('md');
+      setQDraftTableWidth('normal');
+    }
   };
 
   // Start new question draft
@@ -494,7 +968,6 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
     setQDraftOptionC('');
     setQDraftOptionD('');
     setQDraftCorrectIndex(0);
-    setQDraftCategory('hardware');
     setQDraftExplanation('');
     setQDraftType('choice');
     setQDraftLeftA('');
@@ -505,27 +978,53 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
     setQDraftImageB('');
     setQDraftImageC('');
     setQDraftImageD('');
+    setQDraftTableHeaders(['Nhập', 'Xuất']);
+    setQDraftTableRows(['Bàn phím', 'Scanner', 'Màn hình']);
+    setQDraftTableCorrectAnswers([0, 0, 1]);
+    setQDraftTableFontSize('md');
+    setQDraftTableWidth('normal');
   };
 
   // Save question additions/updates
   const handleSaveQuestionDraft = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeLesson) return;
-    if (!qDraftText.trim() || !qDraftOptionA.trim() || !qDraftOptionB.trim() || !qDraftOptionC.trim() || !qDraftOptionD.trim()) {
-      triggerAlert('Vui lòng điền đầy đủ câu hỏi và cả 4 phương án câu trả lời!', 'error');
+
+    if (!qDraftText.trim()) {
+      triggerAlert('Vui lòng điền nội dung câu hỏi!', 'error');
       return;
+    }
+
+    if (qDraftType !== 'table_match') {
+      if (!qDraftOptionA.trim() || !qDraftOptionB.trim() || !qDraftOptionC.trim() || !qDraftOptionD.trim()) {
+        triggerAlert('Vui lòng điền đầy đủ cả 4 phương án câu trả lời!', 'error');
+        return;
+      }
+    } else {
+      if (qDraftTableHeaders.length === 0 || qDraftTableRows.length === 0) {
+        triggerAlert('Bảng tùy chỉnh phải có ít nhất 1 hàng và 1 cột!', 'error');
+        return;
+      }
+      if (qDraftTableHeaders.some(h => !h.trim()) || qDraftTableRows.some(r => !r.trim())) {
+        triggerAlert('Vui lòng nhập đầy đủ nội dung chữ cho tất cả các hàng và cột!', 'error');
+        return;
+      }
     }
 
     const draftQuestionObj: Question = {
       id: editingQuestionId || `q_custom_${Date.now()}`,
       text: qDraftText.trim(),
-      options: [qDraftOptionA.trim(), qDraftOptionB.trim(), qDraftOptionC.trim(), qDraftOptionD.trim()],
-      correctIndex: qDraftCorrectIndex,
+      options: qDraftType === 'table_match' ? [] : [qDraftOptionA.trim(), qDraftOptionB.trim(), qDraftOptionC.trim(), qDraftOptionD.trim()],
+      correctIndex: qDraftType === 'table_match' ? 0 : qDraftCorrectIndex,
       explanation: qDraftExplanation.trim() || 'Đây là lý giải kiến thức chuẩn.',
-      category: qDraftCategory || 'hardware',
       type: qDraftType,
       leftTerms: qDraftType === 'drag_text' ? [qDraftLeftA.trim(), qDraftLeftB.trim(), qDraftLeftC.trim(), qDraftLeftD.trim()] : undefined,
-      leftImages: qDraftType === 'drag_image_text' ? [qDraftImageA.trim(), qDraftImageB.trim(), qDraftImageC.trim(), qDraftImageD.trim()] : undefined
+      leftImages: qDraftType === 'drag_image_text' ? [qDraftImageA.trim(), qDraftImageB.trim(), qDraftImageC.trim(), qDraftImageD.trim()] : undefined,
+      headers: qDraftType === 'table_match' ? qDraftTableHeaders.map(h => h.trim()) : undefined,
+      rows: qDraftType === 'table_match' ? qDraftTableRows.map(r => r.trim()) : undefined,
+      correctAnswers: qDraftType === 'table_match' ? qDraftTableCorrectAnswers : undefined,
+      tableFontSize: qDraftType === 'table_match' ? qDraftTableFontSize : undefined,
+      tableWidth: qDraftType === 'table_match' ? qDraftTableWidth : undefined,
     };
 
     let updatedQuestionsList = [...questions];
@@ -609,7 +1108,11 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
   // Helper Stats calculation
   const totalCorrect = Object.keys(userAnswers).reduce((acc, qIdx) => {
     const parsedIdx = Number(qIdx);
-    return userAnswers[parsedIdx] === questions[parsedIdx]?.correctIndex ? acc + 1 : acc;
+    const q = quizQuestions[parsedIdx];
+    if (!q) return acc;
+    const ansVal = userAnswers[parsedIdx];
+    const isCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text' || q.type === 'table_match') ? ansVal === 100 : ansVal === q.correctIndex;
+    return isCorrect ? acc + 1 : acc;
   }, 0);
 
   const completedCount = Object.keys(userAnswers).length;
@@ -689,41 +1192,78 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
                   </button>
                 </div>
 
-                <form onSubmit={handleAddLesson} className="flex flex-col md:flex-row items-end gap-3">
-                  <div className="flex-1 space-y-1.5 w-full">
-                    <label className="text-xs font-black text-amber-800 block">Tên mục ôn tập/chủ đề mới:</label>
-                    <input 
-                      type="text" 
-                      required
-                      placeholder="Ví dụ: Ôn tập 1: Cơ bản về mạng máy tính"
-                      value={newLessonTitle}
-                      onChange={e => setNewLessonTitle(e.target.value)}
-                      className="w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-2xl text-slate-800 font-bold focus:border-amber-400 focus:outline-none"
-                    />
+                <form onSubmit={handleAddLesson} className="space-y-4">
+                  <div className="flex flex-col md:flex-row gap-3">
+                    <div className="flex-1 space-y-1.5 min-w-0">
+                      <label className="text-xs font-black text-amber-800 block">Tên mục ôn tập/chủ đề mới:</label>
+                      <input 
+                        type="text" 
+                        required
+                        placeholder="Ví dụ: Ôn tập 1: Cơ bản về mạng máy tính"
+                        value={newLessonTitle}
+                        onChange={e => setNewLessonTitle(e.target.value)}
+                        className="w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-2xl text-slate-800 font-bold focus:border-amber-400 focus:outline-none placeholder-slate-300"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5 w-full md:w-36">
+                      <label className="text-xs font-black text-amber-800 block">Biểu tượng:</label>
+                      <select 
+                        value={newLessonEmoji}
+                        onChange={e => setNewLessonEmoji(e.target.value)}
+                        className="w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-2xl text-slate-800 font-bold focus:outline-none focus:border-amber-400 appearance-none text-center"
+                      >
+                        <option value="💻">💻 Máy tính</option>
+                        <option value="🌐">🌐 Trực tuyến</option>
+                        <option value="🛡️">🛡️ Bảo mật</option>
+                        <option value="🔌">🔌 Thiết bị</option>
+                        <option value="🏆">🏆 Điểm cao</option>
+                        <option value="📝">📝 Bài giảng</option>
+                      </select>
+                    </div>
                   </div>
 
-                  <div className="space-y-1.5 w-full md:w-32">
-                    <label className="text-xs font-black text-amber-800 block">Biểu tượng:</label>
-                    <select 
-                      value={newLessonEmoji}
-                      onChange={e => setNewLessonEmoji(e.target.value)}
-                      className="w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-2xl text-slate-800 font-bold focus:outline-none focus:border-amber-400 appearance-none text-center"
+                  <div className="flex flex-col md:flex-row items-end justify-between gap-4 pt-2 bg-amber-50 rounded-2xl p-4 border border-amber-200/40">
+                    <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-black text-amber-800 block">Lấy từ Câu số:</label>
+                        <input 
+                          type="number" 
+                          required
+                          min={1}
+                          max={gradeQuestions.length || 100}
+                          value={newLessonStartIdx}
+                          onChange={e => setNewLessonStartIdx(Math.max(1, Number(e.target.value)))}
+                          className="w-24 px-4 py-2.5 bg-white border-2 border-slate-200 rounded-2xl text-slate-800 font-bold focus:border-amber-400 focus:outline-none text-center"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-black text-amber-800 block">Đến Câu số:</label>
+                        <input 
+                          type="number" 
+                          required
+                          min={newLessonStartIdx}
+                          max={gradeQuestions.length || 100}
+                          value={newLessonEndIdx}
+                          onChange={e => setNewLessonEndIdx(Math.max(newLessonStartIdx, Number(e.target.value)))}
+                          className="w-24 px-4 py-2.5 bg-white border-2 border-slate-200 rounded-2xl text-slate-800 font-bold focus:border-amber-400 focus:outline-none text-center"
+                        />
+                      </div>
+
+                      <div className="text-slate-500 text-xs font-bold pt-2 md:pt-6 pl-1 h-full flex items-center">
+                        💡 Thư mục ngân hàng hiện có{" "}<strong>{gradeQuestions.length} câu hỏi</strong>.
+                      </div>
+                    </div>
+
+                    <button 
+                      type="submit"
+                      className="px-6 py-3.5 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-2xl w-full md:w-auto text-xs cursor-pointer shadow-xs whitespace-nowrap self-stretch md:self-auto flex items-center justify-center gap-1"
                     >
-                      <option value="💻">💻 Máy tính</option>
-                      <option value="🌐">🌐 Trực tuyến</option>
-                      <option value="🛡️">🛡️ Bảo mật</option>
-                      <option value="🔌">🔌 Thiết bị</option>
-                      <option value="🏆">🏆 Điểm cao</option>
-                      <option value="📝">📝 Bài giảng</option>
-                    </select>
+                      <Plus className="w-4 h-4" />
+                      Tạo đề mới
+                    </button>
                   </div>
-
-                  <button 
-                    type="submit"
-                    className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-2xl w-full md:w-auto text-sm cursor-pointer shadow-xs"
-                  >
-                    Tạo mục mới
-                  </button>
                 </form>
               </motion.div>
             )}
@@ -783,16 +1323,29 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
                     {lesson.questions?.length || 0} câu hỏi • {lesson.isCustom ? 'Tùy chỉnh (Giáo viên)' : 'Học chuẩn'}
                   </p>
                   
-                  <div className="flex gap-2 justify-center md:justify-start">
+                  <div className="flex gap-2 justify-center md:justify-start flex-wrap">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
+                        setIsTestMode(false);
                         setSelectedLessonId(lesson.id);
                         setViewTab('study');
                       }}
                       className="px-5 py-2.5 bg-vibrant-yellow hover:bg-[#FFE066] text-vibrant-navy font-bold rounded-full text-xs shadow-[0_3px_0_#D9B632] hover:translate-y-0.5 transition-all cursor-pointer"
                     >
                       Bắt đầu ôn tập ▶️
+                    </button>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsTestMode(true);
+                        setSelectedLessonId(lesson.id);
+                        setViewTab('study');
+                      }}
+                      className="px-5 py-2.5 bg-cyan-500 hover:bg-cyan-600 text-white font-bold rounded-full text-xs shadow-[0_3px_0_#0284C7] hover:translate-y-0.5 transition-all cursor-pointer"
+                    >
+                      Kiểm tra 📝
                     </button>
 
                     {isTeacherMode && (
@@ -884,6 +1437,579 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
     );
   }
 
+  // Inner helper function to render full question editor form
+  const renderQuestionEditorForm = (isNew: boolean) => {
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-amber-50/75 border-4 border-amber-300 p-6 rounded-[2.5rem] space-y-4 text-left"
+      >
+        <div className="flex justify-between items-center border-b-2 border-amber-200 pb-3">
+          <h4 className="text-sm font-black text-amber-900 flex items-center gap-2">
+            <Edit3 className="w-4 h-4" />
+            {!isNew ? 'Sửa Câu Hỏi Đang Chọn' : 'Biên Soạn Câu Hỏi Mới'}
+          </h4>
+          <button
+            type="button"
+            onClick={() => { setShowAddQuestionForm(false); setEditingQuestionId(null); }}
+            className="p-1 text-slate-400 hover:text-red-500 rounded-full cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSaveQuestionDraft} className="space-y-4">
+          
+          {/* 1. Nội dung câu hỏi ôn tập & Dạng câu hỏi */}
+          <div className="bg-white border-2 border-slate-100 p-5 rounded-3xl space-y-4">
+            <span className="text-xs font-black text-amber-900 uppercase block tracking-wider">
+              1. Nội dung câu hỏi và thể loại 📝
+            </span>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-amber-800">Dạng câu hỏi ôn luyện:</label>
+                <select
+                  value={qDraftType}
+                  onChange={e => setQDraftType(e.target.value as any)}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-bold focus:outline-none focus:border-amber-500 text-xs"
+                >
+                  <option value="choice">🔘 Câu hỏi trắc nghiệm (Chọn 1 đáp án)</option>
+                  <option value="drag_text">🔀 Kéo thả ghép nối chữ (Trái chữ - Phải chữ)</option>
+                  <option value="drag_image_text">🖼️ Kéo thả ghép nối hình ảnh (Trái hình - Phải chữ)</option>
+                  <option value="table_match">📊 Ghép nối bảng (Tùy chỉnh cột, hàng, cỡ chữ & độ rộng)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500">Gợi ý:</label>
+                <div className="text-[11px] font-semibold text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-100 leading-relaxed">
+                  {qDraftType === 'choice' && 'Học sinh sẽ được chọn một trong 4 đáp án liệt kê bên dưới.'}
+                  {qDraftType === 'drag_text' && 'Lướt kéo thả để ghép khớp cặp chữ cột bên trái với định nghĩa cột bên phải.'}
+                  {qDraftType === 'drag_image_text' && 'Học sinh sẽ thực hiện kéo thả các nhãn chữ khớp vào hình ảnh bên trái tương ứng.'}
+                  {qDraftType === 'table_match' && 'Bảng thông tin hỏi đáp đa chiều: Bạn có thể tự do thêm bớt cột, hàng, tùy chỉnh chữ hay kích cỡ to nhỏ tùy ý. Học sinh sẽ nhấn chọn vào các ô tương ứng.'}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-black text-amber-800 block">Nội dung câu hỏi / Câu lệnh hướng dẫn:</label>
+              <textarea
+                required
+                placeholder="Ví dụ: Em hãy lựa chọn đáp án phù hợp nhất... hoặc Kéo thả ghép nối các thiết bị..."
+                value={qDraftText}
+                onChange={e => setQDraftText(e.target.value)}
+                rows={2}
+                className="w-full p-3 bg-white border border-slate-300 rounded-xl font-bold focus:outline-amber-400 focus:outline-none text-xs"
+              />
+            </div>
+          </div>
+
+          {/* 2. các câu đáp án */}
+          <div className="bg-white border-2 border-slate-100 p-5 rounded-3xl space-y-4">
+            <span className="text-xs font-black text-amber-900 uppercase block tracking-wider">
+              2. Các câu đáp án 💡
+            </span>
+
+            {/* Choice matching inputs */}
+            {qDraftType === 'choice' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-500 block flex items-center gap-1">
+                    <span className="w-5 h-5 bg-sky-50 text-sky-700 text-[10px] font-black rounded-md flex items-center justify-center border">A</span>
+                    Phương án A:
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={qDraftOptionA}
+                    onChange={e => setQDraftOptionA(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-500 block flex items-center gap-1">
+                    <span className="w-5 h-5 bg-sky-50 text-sky-700 text-[10px] font-black rounded-md flex items-center justify-center border">B</span>
+                    Phương án B:
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={qDraftOptionB}
+                    onChange={e => setQDraftOptionB(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-500 block flex items-center gap-1">
+                    <span className="w-5 h-5 bg-sky-50 text-sky-700 text-[10px] font-black rounded-md flex items-center justify-center border">C</span>
+                    Phương án C:
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={qDraftOptionC}
+                    onChange={e => setQDraftOptionC(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-500 block flex items-center gap-1">
+                    <span className="w-5 h-5 bg-sky-50 text-sky-700 text-[10px] font-black rounded-md flex items-center justify-center border">D</span>
+                    Phương án D:
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={qDraftOptionD}
+                    onChange={e => setQDraftOptionD(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Drag Text matching inputs */}
+            {qDraftType === 'drag_text' && (
+              <div className="space-y-3">
+                <p className="text-[10px] font-bold text-slate-400 italic mb-2">Thực hiện ghép từ bên trái khớp với định nghĩa bên phải. Hệ thống sẽ tự đảo ngẫu nhiên khi hiển thị.</p>
+                
+                <div className="grid grid-cols-2 gap-3 pb-2 border-b border-dashed border-slate-200">
+                  <span className="text-[11px] font-black text-amber-800">Từ Khóa Trái</span>
+                  <span className="text-[11px] font-black text-sky-800">Định Nghĩa Phải Tương Ứng</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ví dụ: RAM"
+                    value={qDraftLeftA}
+                    onChange={e => setQDraftLeftA(e.target.value)}
+                    className="w-full px-3 py-2 bg-amber-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Đáp án khớp: Bộ nhớ truy cập ngẫu nhiên"
+                    value={qDraftOptionA}
+                    onChange={e => setQDraftOptionA(e.target.value)}
+                    className="w-full px-3 py-2 bg-sky-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ví dụ: ROM"
+                    value={qDraftLeftB}
+                    onChange={e => setQDraftLeftB(e.target.value)}
+                    className="w-full px-3 py-2 bg-amber-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Đáp án khớp: Bộ nhớ chỉ đọc dữ liệu"
+                    value={qDraftOptionB}
+                    onChange={e => setQDraftOptionB(e.target.value)}
+                    className="w-full px-3 py-2 bg-sky-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ví dụ: CPU"
+                    value={qDraftLeftC}
+                    onChange={e => setQDraftLeftC(e.target.value)}
+                    className="w-full px-3 py-2 bg-amber-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Đáp án khớp: Bộ điều khiển xử lý trung tâm"
+                    value={qDraftOptionC}
+                    onChange={e => setQDraftOptionC(e.target.value)}
+                    className="w-full px-3 py-2 bg-sky-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ví dụ: Router"
+                    value={qDraftLeftD}
+                    onChange={e => setQDraftLeftD(e.target.value)}
+                    className="w-full px-3 py-2 bg-amber-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Đáp án khớp: Thiết bị định tuyến và truyền mạng"
+                    value={qDraftOptionD}
+                    onChange={e => setQDraftOptionD(e.target.value)}
+                    className="w-full px-3 py-2 bg-sky-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Drag Image and Text matching inputs */}
+            {qDraftType === 'drag_image_text' && (
+              <div className="space-y-3">
+                <p className="text-[10px] font-bold text-slate-400 italic mb-2">
+                  Thêm liên kết ảnh trái (lấy từ các file tải lên ở Kho lưu trữ) khớp với nhãn chữ tương ứng ở bên phải.
+                </p>
+                
+                <div className="grid grid-cols-2 gap-3 pb-2 border-b border-dashed border-slate-200">
+                  <span className="text-[11px] font-black text-amber-800">Liên Kết Hình Ảnh Trái (Link URL)</span>
+                  <span className="text-[11px] font-black text-sky-800">Nhãn Khớp Chữ Phải</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Đường dẫn ảnh: e.g. /favicon.png"
+                    value={qDraftImageA}
+                    onChange={e => setQDraftImageA(e.target.value)}
+                    className="w-full px-3 py-2 bg-amber-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Nhãn khớp: e.g. Thùng rác máy tính"
+                    value={qDraftOptionA}
+                    onChange={e => setQDraftOptionA(e.target.value)}
+                    className="w-full px-3 py-2 bg-sky-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Liên kết hình ảnh B"
+                    value={qDraftImageB}
+                    onChange={e => setQDraftImageB(e.target.value)}
+                    className="w-full px-3 py-2 bg-amber-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Nhãn khớp B"
+                    value={qDraftOptionB}
+                    onChange={e => setQDraftOptionB(e.target.value)}
+                    className="w-full px-3 py-2 bg-sky-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Liên kết hình ảnh C"
+                    value={qDraftImageC}
+                    onChange={e => setQDraftImageC(e.target.value)}
+                    className="w-full px-3 py-2 bg-amber-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Nhãn khớp C"
+                    value={qDraftOptionC}
+                    onChange={e => setQDraftOptionC(e.target.value)}
+                    className="w-full px-3 py-2 bg-sky-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Liên kết hình ảnh D"
+                    value={qDraftImageD}
+                    onChange={e => setQDraftImageD(e.target.value)}
+                    className="w-full px-3 py-2 bg-amber-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Table matching custom interactive builder */}
+            {qDraftType === 'table_match' && (
+              <div className="space-y-4 pt-4 border-t border-dashed border-slate-150">
+                <div className="p-3.5 bg-indigo-50 border border-indigo-100 rounded-2xl text-[11px] text-indigo-700 font-bold leading-relaxed">
+                  💡 Bạn đang biên soạn câu hỏi <strong className="text-indigo-900 font-extrabold text-[12px]">Ghép nối bảng (Matrix Question)</strong>. Thiết lập các Cột (đáp án phân loại) và các Hàng (thông tin cần phân loại), sau đó tick chọn đáp án đúng cho từng hàng trực tiếp trong lưới mô phỏng phía dưới!
+                </div>
+
+                {/* Left & Right Size Configuration */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-slate-700">Cỡ chữ trong bảng:</label>
+                    <select
+                      value={qDraftTableFontSize}
+                      onChange={e => setQDraftTableFontSize(e.target.value as any)}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-xs focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="sm">🔎 Nhỏ (sm) - Thích hợp khi nhiều chữ</option>
+                      <option value="md">👁️ Vừa (md) - Chuẩn mặc định</option>
+                      <option value="lg">🔍 Lớn (lg) - Dành cho bảng ngắn, dễ đọc</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-slate-700">Độ rộng toàn bảng:</label>
+                    <select
+                      value={qDraftTableWidth}
+                      onChange={e => setQDraftTableWidth(e.target.value as any)}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-xs focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="compact">📱 Gọn gàng (Compact)</option>
+                      <option value="normal">💻 Bình thường (Normal)</option>
+                      <option value="wide">🖥️ Rộng rãi (Wide) - Tràn chiều rộng</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Column Headers Section */}
+                <div className="p-4 bg-amber-50/20 rounded-2xl border border-dashed border-amber-200 space-y-3">
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-xs font-black text-amber-900 uppercase tracking-wider block">
+                      Danh sách cột ({qDraftTableHeaders.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQDraftTableHeaders(prev => [...prev, `Cột mới ${prev.length + 1}`]);
+                      }}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[10px] uppercase rounded-lg shadow-sm flex items-center gap-1 cursor-pointer transition-all"
+                    >
+                      <span>➕ Thêm cột</span>
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    {qDraftTableHeaders.map((header, colIdx) => (
+                      <div key={colIdx} className="flex items-center gap-2 p-1.5 px-2 bg-white border border-slate-250/80 rounded-xl shadow-xs">
+                        <span className="text-[10px] font-black text-amber-700 shrink-0 bg-amber-50 w-5 h-5 rounded-md flex items-center justify-center border">
+                          C{colIdx + 1}
+                        </span>
+                        <input
+                          type="text"
+                          value={header}
+                          required
+                          placeholder={`Cột ${colIdx + 1}`}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setQDraftTableHeaders(prev => prev.map((h, idx) => idx === colIdx ? val : h));
+                          }}
+                          className="w-full bg-transparent font-bold text-xs text-slate-800 focus:outline-none focus:border-b-2 focus:border-amber-400"
+                        />
+                        {qDraftTableHeaders.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (qDraftTableHeaders.length <= 1) return;
+                              setQDraftTableHeaders(prev => prev.filter((_, idx) => idx !== colIdx));
+                              setQDraftTableCorrectAnswers(prev => prev.map(correctCol => {
+                                if (correctCol === colIdx) return 0;
+                                if (correctCol > colIdx) return correctCol - 1;
+                                return correctCol;
+                              }));
+                            }}
+                            className="p-1 text-slate-400 hover:text-red-500 rounded-lg cursor-pointer transition-all"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Rows & Correct Matches Realtime Simulator Table */}
+                <div className="p-4 bg-sky-50/20 rounded-2xl border border-dashed border-sky-200 space-y-3">
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-xs font-black text-sky-950 uppercase tracking-wider block">
+                      Danh sách hàng & Chọn đáp án chuẩn ({qDraftTableRows.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQDraftTableRows(prev => [...prev, `Hàng mới ${prev.length + 1}`]);
+                        setQDraftTableCorrectAnswers(prev => [...prev, 0]);
+                      }}
+                      className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white font-extrabold text-[10px] uppercase rounded-lg shadow-sm flex items-center gap-1 cursor-pointer transition-all"
+                    >
+                      <span>➕ Thêm hàng</span>
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-xs">
+                    <table className="w-full text-xs font-bold text-slate-700 border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50/80 border-b border-slate-200">
+                          <th className="p-2 text-left text-slate-500 w-[50%]">Hàng hỏi / Nhãn mô tả</th>
+                          {qDraftTableHeaders.map((header, colIdx) => (
+                            <th key={colIdx} className="p-2 text-center text-slate-500 text-[10px] uppercase tracking-wider border-l border-slate-100 min-w-[70px]">
+                              {header || `Cột ${colIdx + 1}`}
+                            </th>
+                          ))}
+                          <th className="p-2 text-center text-slate-500 w-12 border-l border-slate-100">Xóa</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {qDraftTableRows.map((rowText, rowIdx) => (
+                          <tr key={rowIdx} className="border-b last:border-0 hover:bg-slate-50/40">
+                            {/* Row label edit input */}
+                            <td className="p-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black text-sky-700 bg-sky-50 w-5 h-5 rounded-md flex items-center justify-center border shrink-0">
+                                  H{rowIdx + 1}
+                                </span>
+                                <input
+                                  type="text"
+                                  value={rowText}
+                                  required
+                                  placeholder={`Hàng ${rowIdx + 1}`}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setQDraftTableRows(prev => prev.map((r, idx) => idx === rowIdx ? val : r));
+                                  }}
+                                  className="w-full bg-slate-50/20 p-1 px-2 focus:bg-white border border-transparent hover:border-slate-200 focus:border-sky-400 rounded-lg text-xs font-extrabold focus:outline-none"
+                                />
+                              </div>
+                            </td>
+
+                            {/* Column matching radio options */}
+                            {qDraftTableHeaders.map((_, colIdx) => {
+                              const isChecked = qDraftTableCorrectAnswers[rowIdx] === colIdx;
+                              return (
+                                <td key={colIdx} className="p-2 text-center border-l border-slate-100">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setQDraftTableCorrectAnswers(prev => prev.map((ans, idx) => idx === rowIdx ? colIdx : ans));
+                                    }}
+                                    className="inline-flex items-center justify-center w-6 h-6 rounded-full border border-slate-250 hover:border-sky-400 hover:bg-sky-50 cursor-pointer transition-all mx-auto focus:outline-none"
+                                  >
+                                    <div className={`w-3.5 h-3.5 rounded-full transition-all flex items-center justify-center ${
+                                      isChecked ? 'bg-sky-600 scale-110 shadow-xs' : 'bg-transparent border border-slate-300'
+                                    }`}>
+                                      {isChecked && <div className="w-1 h-1 bg-white rounded-full" />}
+                                    </div>
+                                  </button>
+                                </td>
+                              );
+                            })}
+
+                            {/* Delete row button */}
+                            <td className="p-2 text-center border-l border-slate-100">
+                              {qDraftTableRows.length > 1 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (qDraftTableRows.length <= 1) return;
+                                    setQDraftTableRows(prev => prev.filter((_, idx) => idx !== rowIdx));
+                                    setQDraftTableCorrectAnswers(prev => prev.filter((_, idx) => idx !== rowIdx));
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-red-500 rounded-lg cursor-pointer"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              ) : (
+                                <span className="text-slate-300 text-[10px]">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 3. đáp đúng */}
+          {qDraftType === 'choice' ? (
+            <div className="bg-white border-2 border-slate-100 p-5 rounded-3xl space-y-2">
+              <span className="text-xs font-black text-amber-900 uppercase block tracking-wider">
+                3. Đáp án đúng chuẩn xác 🌐
+              </span>
+              <div className="space-y-1">
+                <label className="text-xs font-black text-slate-500">Lựa chọn một phương án làm đáp án đúng:</label>
+                <select
+                  value={qDraftCorrectIndex}
+                  onChange={e => setQDraftCorrectIndex(Number(e.target.value))}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-bold focus:outline-none focus:border-amber-500 text-xs"
+                >
+                  <option value={0}>Phương án A</option>
+                  <option value={1}>Phương án B</option>
+                  <option value={2}>Phương án C</option>
+                  <option value={3}>Phương án D</option>
+                </select>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white border-2 border-slate-100 p-5 rounded-3xl">
+              <span className="text-xs font-black text-amber-900 uppercase block tracking-wider mb-1">
+                3. Thiết lập nối khớp đúng ✔️
+              </span>
+              <p className="text-[11px] font-semibold text-emerald-700 bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 leading-snug">
+                Hệ thống tự động sử dụng cấu hình đối đầu song song: 
+                <br />• <strong>Cột Trái A</strong> sẽ ghép khớp chuẩn với <strong>Cặp Phải A</strong>
+                <br />• <strong>Cột Trái B</strong> khớp chuẩn với <strong>Cặp Phải B</strong>...
+                <br />Khi học sinh tham gia học tập, hệ thống sẽ tự động xáo trộn vị trí ngẫu nhiên để thử thách!
+              </p>
+            </div>
+          )}
+
+          {/* 4. Lời giải thích */}
+          <div className="bg-white border-2 border-slate-100 p-5 rounded-3xl space-y-2">
+            <span className="text-xs font-black text-amber-900 uppercase block tracking-wider">
+              4. Lời giải thích chi tiết lý do chuẩn 📚
+            </span>
+            <div className="space-y-1">
+              <label className="text-xs font-black text-slate-500 block">Cung cấp lý do để hỗ trợ học sinh học tập:</label>
+              <textarea
+                placeholder="Ví dụ: Định dạng MP4 là một định dạng nén video chuẩn chất lượng cao phổ biến..."
+                value={qDraftExplanation}
+                onChange={e => setQDraftExplanation(e.target.value)}
+                rows={2}
+                className="w-full p-3 bg-white border border-slate-300 rounded-xl font-bold focus:outline-amber-400 focus:outline-none text-xs"
+              />
+            </div>
+          </div>
+
+          {/* Form Submission Controls */}
+          <div className="flex gap-2 justify-end pt-2">
+            <button
+              type="button"
+              onClick={() => { setShowAddQuestionForm(false); setEditingQuestionId(null); }}
+              className="px-5 py-2.5 bg-white border border-slate-300 rounded-xl text-slate-500 font-bold text-xs cursor-pointer"
+            >
+              Bỏ qua
+            </button>
+            <button
+              type="submit"
+              className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-xl text-xs flex items-center gap-1 shadow-xs cursor-pointer"
+            >
+              <Check className="w-3.5 h-3.5" />
+              Lưu thông tin
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    );
+  };
+
   // Active Lesson Screen - Tabbed split between "Quiz View" & "Teacher Editor View"
   return (
     <div className="p-6 max-w-3xl mx-auto font-sans">
@@ -894,7 +2020,7 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
         {/* Navigation Action */}
         <div className="flex justify-between items-center w-full">
           <button
-            onClick={() => setSelectedLessonId(null)}
+            onClick={handleExitLesson}
             className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-vibrant-blue hover:text-white text-slate-700 font-black rounded-full text-xs transition-all cursor-pointer border border-transparent"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -959,18 +2085,22 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
                 {/* Progress indicators wrapper */}
                 <div>
                   <div className="flex justify-between items-center text-xs font-black text-slate-500 mb-1.5">
-                    <span>Câu {currentIndex + 1} của {questions.length}</span>
-                    <span className="text-vibrant-green">Đúng: {totalCorrect}/{completedCount}</span>
+                    <span>Câu {currentIndex + 1} của {quizQuestions.length}</span>
+                    {isTestMode ? (
+                      <span className="text-vibrant-blue">Đã làm: {completedCount}/{quizQuestions.length} câu</span>
+                    ) : (
+                      <span className="text-vibrant-green">Đúng: {totalCorrect}/{completedCount}</span>
+                    )}
                   </div>
                   <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden border-2 border-slate-200 shadow-inner">
                     <div 
                       className="h-full bg-vibrant-blue transition-all duration-300"
-                      style={{ width: `${(questions.length > 0 ? ((currentIndex + 1) / questions.length) : 0) * 100}%` }}
+                      style={{ width: `${(quizQuestions.length > 0 ? ((currentIndex + 1) / quizQuestions.length) : 0) * 100}%` }}
                     />
                   </div>
                 </div>
 
-                {questions.length === 0 ? (
+                {quizQuestions.length === 0 ? (
                   <div className="bg-white rounded-[2.5rem] border-4 border-dashed border-slate-300 p-8 text-center text-slate-400 font-bold">
                     Bài học này hiện chưa có câu hỏi nào. Nhấn mục sửa câu hỏi bên trên để thêm nhé!
                   </div>
@@ -980,24 +2110,180 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
                     <div className="bg-white rounded-[2.5rem] border-4 border-vibrant-pink p-8 shadow-sm relative overflow-hidden">
                       <span className="absolute top-4 right-4 text-3xl select-none" role="img" aria-label="decor">💡</span>
                       <span className={`inline-block py-1 px-3 font-black text-xs rounded-full mb-3 uppercase tracking-wider border ${
-                        questions[currentIndex]?.type === 'drag_text'
-                          ? 'bg-purple-50 text-purple-705 border-purple-200 text-purple-700'
-                          : questions[currentIndex]?.type === 'drag_image_text'
-                            ? 'bg-pink-50 text-pink-705 border-pink-200 text-pink-700'
-                            : 'bg-blue-50 text-blue-705 border-blue-200 text-blue-700'
+                        quizQuestions[currentIndex]?.type === 'drag_text'
+                          ? 'bg-purple-50 text-purple-700 border-purple-200'
+                          : quizQuestions[currentIndex]?.type === 'drag_image_text'
+                            ? 'bg-pink-50 text-pink-700 border-pink-200'
+                            : quizQuestions[currentIndex]?.type === 'table_match'
+                              ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                              : 'bg-blue-50 text-blue-700 border-blue-200'
                       }`}>
-                        {questions[currentIndex]?.type === 'drag_text' && '🔀 Ghép nối chữ'}
-                        {questions[currentIndex]?.type === 'drag_image_text' && '🖼️ Ghép nối hình - chữ'}
-                        {(!questions[currentIndex]?.type || questions[currentIndex]?.type === 'choice') && '🔘 Trắc nghiệm chọn đáp án'}
+                        {quizQuestions[currentIndex]?.type === 'drag_text' && '🔀 Ghép nối chữ'}
+                        {quizQuestions[currentIndex]?.type === 'drag_image_text' && '🖼️ Ghép nối hình - chữ'}
+                        {quizQuestions[currentIndex]?.type === 'table_match' && '📊 Ghép nối bảng'}
+                        {(!quizQuestions[currentIndex]?.type || quizQuestions[currentIndex]?.type === 'choice') && '🔘 Trắc nghiệm chọn đáp án'}
                       </span>
                       
                       <h3 className="text-lg md:text-xl font-black font-display text-slate-800 leading-snug">
-                        {questions[currentIndex]?.text}
+                        {quizQuestions[currentIndex]?.text}
                       </h3>
                     </div>
 
-                    {/* Options grid / Drag matching board dynamic render */}
-                    {questions[currentIndex]?.type === 'drag_text' || questions[currentIndex]?.type === 'drag_image_text' ? (
+                    {/* Options grid / Drag matching board / Table matrix render */}
+                    {quizQuestions[currentIndex]?.type === 'table_match' ? (
+                      /* Table matching matrix rendering */
+                      (() => {
+                        const q = quizQuestions[currentIndex];
+                        if (!q) return null;
+                        
+                        const selections = tableAnswers[currentIndex] || {};
+                        const isAnswered = isTestMode ? false : userAnswers[currentIndex] !== undefined;
+                        const rowsCount = q.rows?.length || 0;
+                        
+                        // Select styling values based on options
+                        const sizeFontHeaders = q.tableFontSize === 'sm' ? 'text-[11px]' : q.tableFontSize === 'lg' ? 'text-[14px]' : 'text-xs md:text-sm';
+                        const sizeFontCells = q.tableFontSize === 'sm' ? 'text-[10px]' : q.tableFontSize === 'lg' ? 'text-[13px]' : 'text-xs';
+                        
+                        const widthClass = q.tableWidth === 'compact' ? 'max-w-md mx-auto' : q.tableWidth === 'wide' ? 'w-full' : 'max-w-2xl mx-auto';
+                        
+                        return (
+                          <div className={`space-y-6 ${widthClass}`}>
+                            <div className="bg-white border-4 border-slate-100 p-4 md:p-6 rounded-[2rem] shadow-md overflow-hidden">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-3 text-center">
+                                📊 Click / Tap vào các ô để khớp thông tin tương ứng:
+                              </span>
+                              
+                              <div className="overflow-x-auto rounded-2xl border border-slate-150 shadow-xs">
+                                <table className="w-full text-left border-collapse">
+                                  <thead>
+                                    <tr className="bg-slate-50 border-b border-slate-200">
+                                      <th className={`p-3 font-extrabold text-slate-600 ${sizeFontHeaders} w-[40%] bg-slate-50`}>
+                                        Danh mục hỏi
+                                      </th>
+                                      {(q.headers || []).map((header, colIdx) => (
+                                        <th 
+                                          key={colIdx} 
+                                          className={`p-3 font-black text-slate-800 border-l border-slate-100/80 text-center uppercase tracking-wider ${sizeFontHeaders}`}
+                                        >
+                                          {header}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(q.rows || []).map((rowText, rowIdx) => {
+                                      // Check correctness status for row in current play session
+                                      const rowChosenCol = selections[rowIdx];
+                                      const rowCorrectCol = q.correctAnswers?.[rowIdx];
+                                      const isRowCorrect = rowChosenCol === rowCorrectCol;
+                                      
+                                      return (
+                                        <tr key={rowIdx} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/20">
+                                          {/* Row label */}
+                                          <td className={`p-3 font-extrabold text-slate-700 leading-snug ${sizeFontCells} bg-slate-50/25`}>
+                                            <div className="flex items-center gap-2">
+                                              <span className="w-5 h-5 rounded-md bg-sky-50 text-sky-700 text-[10px] font-black flex items-center justify-center border">
+                                                {rowIdx + 1}
+                                              </span>
+                                              <span>{rowText}</span>
+                                              {isAnswered && (
+                                                <span className={`text-[10px] uppercase font-black tracking-wider px-1.5 py-0.5 rounded-md ${
+                                                  isRowCorrect ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                                                }`}>
+                                                  {isRowCorrect ? '✓' : '✗'}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </td>
+
+                                          {/* Options checkboxes */}
+                                          {(q.headers || []).map((_, colIdx) => {
+                                            const isSelected = rowChosenCol === colIdx;
+                                            const isCorrectCell = rowCorrectCol === colIdx;
+                                            
+                                            let cellBg = "bg-white hover:bg-slate-50 cursor-pointer";
+                                            let radioDotStyle = "border-slate-300";
+                                            let showIcon: 'check' | 'cross' | 'check-dashed' | null = null;
+                                            
+                                            if (isAnswered) {
+                                              if (isSelected && isCorrectCell) {
+                                                cellBg = "bg-emerald-50 text-emerald-950 border-l-2 border-r-2 border-emerald-400 font-bold";
+                                                radioDotStyle = "bg-emerald-500 border-emerald-500 scale-110";
+                                                showIcon = 'check';
+                                              } else if (isSelected && !isCorrectCell) {
+                                                cellBg = "bg-rose-50 text-rose-950 border-l-2 border-r-2 border-rose-450 font-bold";
+                                                radioDotStyle = "bg-rose-500 border-rose-500 scale-110";
+                                                showIcon = 'cross';
+                                              } else if (!isSelected && isCorrectCell) {
+                                                cellBg = "bg-emerald-50/20 text-emerald-700 border border-dashed border-emerald-300";
+                                                radioDotStyle = "border-dashed border-emerald-400";
+                                                showIcon = 'check-dashed';
+                                              } else {
+                                                cellBg = "bg-slate-50/30 opacity-40 cursor-not-allowed";
+                                                radioDotStyle = "border-slate-200/50";
+                                              }
+                                            } else {
+                                              if (isSelected) {
+                                                cellBg = "bg-indigo-50 border border-indigo-400 text-indigo-950 font-black shadow-inner scale-[1.01]";
+                                                radioDotStyle = "bg-indigo-600 border-indigo-600 scale-110 shadow-xs";
+                                              }
+                                            }
+                                            
+                                            return (
+                                              <td 
+                                                key={colIdx} 
+                                                onClick={() => !isAnswered && handleSelectTableCell(rowIdx, colIdx)}
+                                                className={`p-3 text-center border-l border-slate-100 transition-all select-none ${cellBg}`}
+                                              >
+                                                <div className="flex flex-col items-center justify-center gap-1">
+                                                  <div className={`w-5 h-5 rounded-full border transition-all flex items-center justify-center ${radioDotStyle}`}>
+                                                    {isSelected && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                                    {!isSelected && isAnswered && isCorrectCell && <div className="w-1 h-1 bg-emerald-500 rounded-full" />}
+                                                  </div>
+                                                  
+                                                  {showIcon === 'check' && (
+                                                    <span className="text-[10px] font-black text-emerald-600 uppercase">Đúng</span>
+                                                  )}
+                                                  {showIcon === 'cross' && (
+                                                    <span className="text-[10px] font-black text-rose-600">Sai</span>
+                                                  )}
+                                                  {showIcon === 'check-dashed' && (
+                                                    <span className="text-[9px] font-bold text-emerald-600/80 uppercase">Đúng</span>
+                                                  )}
+                                                </div>
+                                              </td>
+                                            );
+                                          })}
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+
+                            {/* Verification Button for learn mode */}
+                            {!isTestMode && userAnswers[currentIndex] === undefined && (
+                              <div className="pt-2 text-right">
+                                <button
+                                  onClick={handleCheckTableMatchResult}
+                                  className="px-8 py-3.5 bg-sky-600 hover:bg-sky-700 text-white font-black rounded-full shadow-[0_4px_0_#0D5B94] hover:translate-y-0.5 active:translate-y-1 transition-all flex items-center gap-2 justify-center ml-auto cursor-pointer text-xs"
+                                >
+                                  🏁 Xác nhận kết quả bảng ghép 🏁
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Completed Status In Test Mode */}
+                            {isTestMode && Object.keys(selections).length === rowsCount && (
+                              <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-2xl text-[11px] text-emerald-800 font-bold text-center">
+                                ✓ Đã ghi nhận đầy đủ tất cả đáp án trong bảng! Bạn có thể bấm để tiếp tục bài thi.
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()
+                    ) : quizQuestions[currentIndex]?.type === 'drag_text' || quizQuestions[currentIndex]?.type === 'drag_image_text' ? (
                       /* Matching dragging board */
                       <div className="space-y-6">
                         <div className="bg-slate-50 border-2 border-slate-200/60 p-5 rounded-[2.5rem] space-y-4">
@@ -1007,55 +2293,70 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
                           
                           <div className="grid grid-cols-1 gap-4">
                             {[0, 1, 2, 3].map((slotIdx) => {
-                              const leftTermVal = questions[currentIndex]?.leftTerms?.[slotIdx] || `Cột Trái ${slotIdx + 1}`;
-                              const leftImgVal = questions[currentIndex]?.leftImages?.[slotIdx] || '';
+                              const leftTermVal = quizQuestions[currentIndex]?.leftTerms?.[slotIdx] || `Cột Trái ${slotIdx + 1}`;
+                              const leftImgVal = quizQuestions[currentIndex]?.leftImages?.[slotIdx] || '';
                               const placedCard = matchingSlots[slotIdx];
-                              const isAnswered = userAnswers[currentIndex] !== undefined;
+                              const isAnswered = isTestMode ? false : userAnswers[currentIndex] !== undefined;
                               
                               // Correct option text for this specific slot position
-                              const isSelfCorrect = placedCard === questions[currentIndex]?.options[slotIdx];
+                              const isSelfCorrect = placedCard === quizQuestions[currentIndex]?.options[slotIdx];
                               
                               return (
                                 <div 
                                   key={slotIdx} 
-                                  className="flex flex-col md:flex-row gap-4 items-stretch md:items-center bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs"
+                                  className="flex flex-row gap-2 sm:gap-4 items-center justify-between bg-white p-2.5 sm:p-3.5 rounded-2xl border border-slate-200 shadow-xs w-full"
                                 >
                                   {/* Left Item */}
-                                  <div className="w-full md:w-5/12 flex items-center gap-3 bg-slate-50 p-2.5 rounded-xl border border-slate-100 shrink-0">
-                                    <span className="w-6 h-6 rounded-md bg-amber-500 text-white text-[10px] font-black flex items-center justify-center border shrink-0">
+                                  <div className="w-[45%] flex items-center gap-2 sm:gap-4 bg-slate-50 p-2 sm:p-3 rounded-xl border border-slate-100 shrink-0 select-none">
+                                    <span className="w-5 h-5 sm:w-7 h-7 rounded-full bg-amber-500 text-white text-[10px] sm:text-xs font-black flex items-center justify-center border shrink-0">
                                       {String.fromCharCode(65 + slotIdx)}
                                     </span>
-                                    {questions[currentIndex]?.type === 'drag_image_text' ? (
-                                      <div className="flex items-center gap-2">
+                                    {quizQuestions[currentIndex]?.type === 'drag_image_text' ? (
+                                      <div className="flex items-center justify-center bg-white p-0.5 sm:p-1 rounded-lg sm:rounded-xl border border-slate-150 shrink-0">
                                         {leftImgVal ? (
                                           <img 
                                             src={leftImgVal} 
                                             alt="" 
-                                            className="w-14 h-14 rounded-xl object-cover border border-slate-200 shrink-0 select-none shadow-xs" 
+                                            className="w-12 h-12 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-lg object-contain select-none transition-all shadow-xs" 
                                             referrerPolicy="no-referrer" 
                                           />
                                         ) : (
-                                          <div className="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center border text-xs text-slate-400 font-bold shrink-0">Gặp lỗi ảnh</div>
+                                          <div className="w-12 h-12 sm:w-20 sm:h-20 md:w-24 md:h-24 bg-slate-100 rounded-lg flex items-center justify-center border text-[9px] sm:text-[11px] text-slate-400 font-bold shrink-0">Không có ảnh</div>
                                         )}
-                                        <div className="text-xs font-bold text-slate-600">Hình ảnh gốc</div>
                                       </div>
                                     ) : (
-                                      <span className="text-xs font-black text-amber-900 leading-relaxed">{leftTermVal}</span>
+                                      <span className="text-[11px] sm:text-xs font-black text-amber-900 leading-relaxed truncate">{leftTermVal}</span>
                                     )}
                                   </div>
                                   
                                   {/* Arrow indicator */}
-                                  <div className="hidden md:flex flex-col items-center justify-center shrink-0">
-                                    <span className="text-xl font-bold text-slate-300">⇄</span>
+                                  <div className="flex flex-col items-center justify-center shrink-0">
+                                    <span className="text-sm sm:text-lg font-black text-slate-300">➔</span>
                                   </div>
                                   
                                   {/* Drop Target Card Placement slot */}
                                   <div 
-                                    onDragOver={(e) => { if (!isAnswered) e.preventDefault(); }}
+                                    onDragOver={(e) => { 
+                                      if (!isAnswered) {
+                                        e.preventDefault();
+                                        e.dataTransfer.dropEffect = "move";
+                                        if (dragOverSlot !== slotIdx) {
+                                          setDragOverSlot(slotIdx);
+                                        }
+                                      }
+                                    }}
+                                    onDragLeave={() => {
+                                      if (dragOverSlot === slotIdx) {
+                                        setDragOverSlot(null);
+                                      }
+                                    }}
                                     onDrop={(e) => { 
                                       if (isAnswered) return;
-                                      const cardText = e.dataTransfer.getData("text");
-                                      if (cardText) handlePlaceCardInSlot(cardText, slotIdx);
+                                      setDragOverSlot(null);
+                                      const cardText = e.dataTransfer.getData("text") || e.dataTransfer.getData("text/plain");
+                                      if (cardText) {
+                                        handlePlaceCardInSlot(cardText, slotIdx);
+                                      }
                                     }}
                                     onClick={() => {
                                       if (isAnswered) return;
@@ -1065,24 +2366,38 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
                                         handleRemoveCardFromSlot(slotIdx);
                                       }
                                     }}
-                                    className={`flex-1 p-3 min-h-[56px] rounded-xl border-2 border-dashed flex items-center justify-between transition-all select-none gap-2 relative ${
+                                    className={`flex-1 p-2 sm:p-3 min-h-[44px] sm:min-h-[56px] rounded-xl border-2 border-dashed flex items-center justify-between transition-all select-none gap-1.5 sm:gap-2 relative ${
                                       placedCard 
                                         ? isAnswered 
                                           ? isSelfCorrect 
-                                            ? 'bg-emerald-50 border-emerald-400 text-emerald-800 font-bold' 
-                                            : 'bg-rose-50 border-rose-400 text-rose-800 font-bold'
-                                          : 'bg-indigo-50/50 border-indigo-400 text-indigo-900 font-bold cursor-pointer hover:bg-slate-50' 
-                                        : selectedCardToPlace 
-                                          ? 'border-amber-400 bg-amber-50/30 cursor-pointer animate-pulse'
-                                          : 'border-slate-250 bg-slate-50 text-slate-400 text-xs italic'
+                                            ? 'bg-emerald-50 border-emerald-400 text-emerald-850 font-bold' 
+                                            : 'bg-rose-50 border-rose-400 text-rose-850 font-bold'
+                                          : 'bg-indigo-50/50 border-indigo-400 text-indigo-900 font-bold cursor-grab active:cursor-grabbing hover:bg-slate-50' 
+                                        : dragOverSlot === slotIdx
+                                          ? 'border-amber-500 bg-amber-100/50 scale-[1.02] ring-2 ring-amber-300'
+                                          : selectedCardToPlace 
+                                            ? 'border-amber-400 bg-amber-50/30 cursor-pointer animate-pulse'
+                                            : 'border-slate-250 bg-slate-50 text-slate-400 text-[10px] sm:text-xs italic'
                                     }`}
                                   >
-                                    <div className="flex items-center gap-2">
+                                    <div 
+                                      draggable={placedCard ? !isAnswered : false}
+                                      onDragStart={(e) => {
+                                        if (placedCard && !isAnswered) {
+                                          e.dataTransfer.setData("text", placedCard);
+                                          e.dataTransfer.setData("text/plain", placedCard);
+                                          e.dataTransfer.setData("originSlot", String(slotIdx));
+                                          setIsDragging(true);
+                                        }
+                                      }}
+                                      onDragEnd={() => setIsDragging(false)}
+                                      className={`flex items-center gap-1.5 sm:gap-2 w-full ${placedCard ? 'cursor-grab active:cursor-grabbing' : 'pointer-events-none'}`}
+                                    >
                                       {placedCard ? (
-                                        <span className="text-xs font-bold leading-snug">{placedCard}</span>
+                                        <span className="text-[11px] sm:text-xs font-bold leading-snug">☰ {placedCard}</span>
                                       ) : (
-                                        <span className="text-[11px] font-bold text-slate-400">
-                                          {selectedCardToPlace ? '👇 Chạm vào đây để xếp ghép' : '⚙️ Lắp ghép nhãn khớp tương đồng...'}
+                                        <span className="text-[9px] sm:text-[11px] font-bold text-slate-400 leading-tight">
+                                          {selectedCardToPlace ? '👇 Chạm ráp' : 'Kéo thả hoặc chạm nhãn...'}
                                         </span>
                                       )}
                                     </div>
@@ -1113,15 +2428,37 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
                         </div>
 
                         {/* Available source card nodes list */}
-                        {userAnswers[currentIndex] === undefined && (
-                          <div className="bg-amber-50/40 border-2 border-amber-200/60 p-5 rounded-[2.5rem] space-y-3">
+                        {(!isTestMode ? userAnswers[currentIndex] === undefined : true) && (
+                          <div 
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              setIsDraggingOverAvailable(true);
+                            }}
+                            onDragLeave={() => {
+                              setIsDraggingOverAvailable(false);
+                            }}
+                            onDrop={(e) => {
+                              setIsDraggingOverAvailable(false);
+                              const originSlotStr = e.dataTransfer.getData("originSlot");
+                              if (originSlotStr !== undefined && originSlotStr !== "") {
+                                handleRemoveCardFromSlot(Number(originSlotStr));
+                              }
+                            }}
+                            className={`p-5 rounded-[2.5rem] space-y-3 border-2 transition-all ${
+                              isDraggingOverAvailable 
+                                ? 'bg-amber-100 border-amber-500 scale-[1.01]' 
+                                : 'bg-amber-50/40 border-amber-200/60'
+                            }`}
+                          >
                             <span className="text-xs font-black text-amber-900 uppercase block tracking-wide">
-                              Danh sách các nhãn chữ (Chọn 1 nhãn rồi ấn tiếp vào khung rỗng ở trên):
+                              Danh sách các nhãn chữ (Có thể Kéo thả trực tiếp hoặc Chạm chọn):
                             </span>
                             
                             <div className="flex flex-wrap gap-2.5">
                               {availableCards.length === 0 ? (
-                                <span className="text-xs italic text-slate-400 py-1.5 block">Đã ráp đầy đủ các nhãn! Hãy nhấn Xác Nhận Kết Quả ghép đôi bên dưới.</span>
+                                <span className="text-xs italic py-1.5 block text-slate-550 font-bold">
+                                  {isTestMode ? 'Đã ráp đầy đủ các nhãn! Hãy xem lại các cặp ghép nối hoặc nhấn "Câu tiếp theo" nhé.' : 'Đã ráp đầy đủ các nhãn! Hãy nhấn Xác Nhận Kết Quả ghép đôi bên dưới.'}
+                                </span>
                               ) : (
                                 availableCards.map((card, idx) => {
                                   const isFocused = selectedCardToPlace === card;
@@ -1129,7 +2466,13 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
                                     <div
                                       key={idx}
                                       draggable={true}
-                                      onDragStart={(e) => { e.dataTransfer.setData("text", card); }}
+                                      onDragStart={(e) => { 
+                                        e.dataTransfer.setData("text", card); 
+                                        e.dataTransfer.setData("text/plain", card); 
+                                        e.dataTransfer.effectAllowed = "move";
+                                        setIsDragging(true);
+                                      }}
+                                      onDragEnd={() => setIsDragging(false)}
                                       onClick={() => setSelectedCardToPlace(isFocused ? null : card)}
                                       className={`px-3 py-2 rounded-xl border border-slate-200 shadow-sm font-bold text-xs cursor-grab active:cursor-grabbing transition-all select-none ${
                                         isFocused 
@@ -1147,7 +2490,7 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
                         )}
 
                         {/* Verification matching trigger */}
-                        {userAnswers[currentIndex] === undefined && (
+                        {!isTestMode && userAnswers[currentIndex] === undefined && (
                           <div className="pt-2 text-right">
                             <button
                               onClick={handleCheckMatchingResult}
@@ -1161,20 +2504,30 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
                     ) : (
                       /* Traditional Multiple Choice Grid rendering */
                       <div className="grid grid-cols-1 gap-3">
-                        {questions[currentIndex]?.options.map((option, idx) => {
+                        {quizQuestions[currentIndex]?.options.map((option, idx) => {
                           const selectedOption = userAnswers[currentIndex];
-                          const isAnswered = selectedOption !== undefined;
+                          const isAnswered = isTestMode ? false : selectedOption !== undefined;
                           const isThisSelected = selectedOption === idx;
-                          const isCorrectOption = idx === questions[currentIndex].correctIndex;
-                          let optionStyle = "bg-white border-2 border-slate-200 hover:border-vibrant-blue hover:text-vibrant-blue text-slate-800";
-                          
-                          if (isAnswered) {
-                            if (isCorrectOption) {
-                              optionStyle = "bg-[#ECFDF5] border-4 border-vibrant-green text-[#065F46] font-extrabold";
-                            } else if (isThisSelected) {
-                              optionStyle = "bg-[#FEF2F2] border-4 border-vibrant-pink text-[#991B1B] font-extrabold";
+                          const isCorrectOption = idx === quizQuestions[currentIndex]?.correctIndex;
+
+                          let optionStyle = "";
+                          if (isTestMode) {
+                            if (isThisSelected) {
+                              optionStyle = "bg-indigo-50 border-2 border-indigo-500 font-bold shadow-[0_4px_0_#4F46E5] text-indigo-900";
                             } else {
-                              optionStyle = "bg-slate-50 border-2 border-slate-100 text-slate-400 opacity-60";
+                              optionStyle = "bg-white border-2 border-slate-200 hover:border-vibrant-blue shadow-[0_4px_0_#E2E8F0] active:translate-y-0.5 text-slate-800";
+                            }
+                          } else {
+                            if (isAnswered) {
+                              if (isCorrectOption) {
+                                optionStyle = "bg-emerald-50 text-emerald-950 border-2 border-vibrant-green font-bold shadow-[0_4px_0_#2ECC71] text-emerald-900";
+                              } else if (isThisSelected) {
+                                optionStyle = "bg-rose-50 text-rose-950 border-2 border-vibrant-pink/80 font-bold shadow-[0_4px_0_#E74C3C] text-rose-950";
+                              } else {
+                                optionStyle = "bg-slate-50 text-slate-400 border border-slate-200/40 opacity-50 cursor-not-allowed";
+                              }
+                            } else {
+                              optionStyle = "bg-white border-2 border-slate-200 hover:border-vibrant-blue shadow-[0_4px_0_#E2E8F0] active:translate-y-0.5 text-slate-800";
                             }
                           }
 
@@ -1188,16 +2541,16 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
                               className={`w-full text-left p-4 rounded-2xl font-semibold text-sm flex items-center justify-between transition-all cursor-pointer ${optionStyle}`}
                             >
                               <div className="flex items-center gap-3 pr-2">
-                                <span className={`w-8 h-8 rounded-lg ${isAnswered ? 'bg-[#D1FAE5]' : 'bg-slate-100'} border text-xs font-black flex items-center justify-center shrink-0`}>
+                                <span className={`w-8 h-8 rounded-lg ${isThisSelected && isTestMode ? 'bg-[#EEF2FF] border-indigo-200' : isAnswered ? 'bg-[#D1FAE5]' : 'bg-slate-100'} border text-xs font-black flex items-center justify-center shrink-0`}>
                                   {String.fromCharCode(65 + idx)}
                                 </span>
                                 <span className="leading-snug">{option}</span>
                               </div>
 
-                              {isAnswered && isCorrectOption && (
+                              {!isTestMode && isAnswered && isCorrectOption && (
                                 <CheckCircle className="w-5 h-5 text-vibrant-green shrink-0" />
                               )}
-                              {isAnswered && isThisSelected && !isCorrectOption && (
+                              {!isTestMode && isAnswered && isThisSelected && !isCorrectOption && (
                                 <XCircle className="w-5 h-5 text-vibrant-pink shrink-0" />
                               )}
                             </motion.button>
@@ -1208,10 +2561,10 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
 
                     {/* Response explanation box */}
                     <AnimatePresence>
-                      {userAnswers[currentIndex] !== undefined && (() => {
-                        const q = questions[currentIndex];
+                      {!isTestMode && userAnswers[currentIndex] !== undefined && (() => {
+                        const q = quizQuestions[currentIndex];
                         const ansVal = userAnswers[currentIndex];
-                        const isCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text') ? ansVal === 100 : ansVal === q.correctIndex;
+                        const isCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text' || q.type === 'table_match') ? ansVal === 100 : ansVal === q.correctIndex;
                         return (
                           <motion.div
                             initial={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -1239,7 +2592,7 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
                               📖 Kiến thức giải thích đầy đủ:
                             </div>
                             <p className="text-sm text-slate-700 font-bold leading-relaxed">
-                              {questions[currentIndex]?.explanation}
+                              {quizQuestions[currentIndex]?.explanation}
                             </p>
                           </motion.div>
                         );
@@ -1259,12 +2612,26 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
 
                       <button
                         disabled={userAnswers[currentIndex] === undefined}
-                        onClick={handleNext}
+                        onClick={() => {
+                          if (currentIndex === quizQuestions.length - 1 && isTestMode) {
+                            triggerConfirm(
+                              'Nộp bài kiểm tra 📝',
+                              'Con đã hoàn thành toàn bộ câu hỏi ôn tập. Con có muốn nộp bài để xem kết quả và lưu lại tiến trình không?',
+                              () => {
+                                handleNext();
+                              }
+                            );
+                          } else {
+                            handleNext();
+                          }
+                        }}
                         className={`flex items-center gap-2 px-6 py-3 bg-vibrant-blue text-white rounded-full text-sm font-black shadow-[0_4px_0_#2B69C1] hover:translate-y-0.5 active:translate-y-1 transition-all cursor-pointer ${
                           userAnswers[currentIndex] === undefined ? 'opacity-50 cursor-not-allowed shadow-none' : ''
                         }`}
                       >
-                        {currentIndex === questions.length - 1 ? 'Xem kết quả' : 'Câu tiếp theo'}
+                        {currentIndex === quizQuestions.length - 1 
+                          ? (isTestMode ? 'Nộp bài kiểm tra 📝' : 'Xem kết quả') 
+                          : 'Câu tiếp theo'}
                         <ArrowRight className="w-4 h-4" />
                       </button>
                     </div>
@@ -1277,37 +2644,52 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
                 key="finished-card"
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="bg-white rounded-[2.5rem] border-4 border-vibrant-green p-8 shadow-sm text-center space-y-6"
+                className={`bg-white rounded-[2.5rem] border-4 p-8 shadow-sm text-center space-y-6 ${
+                  isTestMode ? 'border-cyan-500' : 'border-vibrant-green'
+                }`}
               >
-                <div className="inline-block p-4 bg-emerald-50 rounded-full relative">
-                  <Trophy className="w-16 h-16 text-vibrant-green animate-pulse" />
+                <div className={`inline-block p-4 rounded-full relative ${
+                  isTestMode ? 'bg-cyan-50' : 'bg-emerald-50'
+                }`}>
+                  <Trophy className={`w-16 h-16 animate-pulse ${
+                    isTestMode ? 'text-cyan-500' : 'text-vibrant-green'
+                  }`} />
                   <Sparkles className="absolute top-2 right-2 w-5 h-5 text-vibrant-yellow animate-spin" />
                 </div>
 
                 <div>
-                  <h3 className="text-3xl font-black font-display text-vibrant-green">Hoàn thành bài ôn tập!</h3>
-                  <p className="text-slate-500 font-bold text-sm mt-1">Con đã rất nỗ lực học tập hôm nay!</p>
+                  <h3 className={`text-3xl font-black font-display ${
+                    isTestMode ? 'text-cyan-600' : 'text-vibrant-green'
+                  }`}>
+                    {isTestMode ? 'Hoàn thành bài kiểm tra!' : 'Hoàn thành bài ôn tập!'}
+                  </h3>
+                  <p className="text-slate-500 font-bold text-sm mt-1">
+                    {isTestMode 
+                      ? 'Tiến trình điểm số của con đã được tự động lưu lại hệ thống!' 
+                      : 'Con đã rất nỗ lực học tập hôm nay!'
+                    }
+                  </p>
                 </div>
 
                 <div className="max-w-xs mx-auto border-2 border-vibrant-yellow bg-vibrant-bg/40 p-5 rounded-[2rem] grid grid-cols-2 gap-4">
                   <div className="text-center font-display">
                     <span className="block text-2xl font-black text-slate-800">
-                      {totalCorrect}/{questions.length}
+                      {totalCorrect}/{quizQuestions.length}
                     </span>
-                    <span className="text-[10px] text-slate-400 font-black uppercase">Đúng</span>
+                    <span className="text-[10px] text-slate-400 font-black uppercase">Điểm Số ⭐</span>
                   </div>
                   <div className="text-center font-display">
                     <span className="block text-2xl font-black text-vibrant-blue">
-                      {questions.length > 0 ? Math.round((totalCorrect / questions.length) * 100) : 0}%
+                      {quizQuestions.length > 0 ? Math.round((totalCorrect / quizQuestions.length) * 100) : 0}%
                     </span>
                     <span className="text-[10px] text-slate-400 font-black uppercase">Tỉ Lệ</span>
                   </div>
                 </div>
 
                 <div className="p-4 bg-orange-50 border-2 border-orange-200 text-orange-950 text-sm font-bold rounded-2xl">
-                  🌟 {totalCorrect === questions.length 
-                    ? 'Tuyệt đỉnh! Con đã đạt trọn vẹn điểm tuyệt đối 100%'
-                    : totalCorrect >= questions.length * 0.8 
+                  🌟 {totalCorrect === quizQuestions.length 
+                    ? 'Tuyệt đỉnh! Con đã đạt trọn vẹn điểm tuyệt đối!'
+                    : totalCorrect >= quizQuestions.length * 0.8 
                       ? 'Tuyệt vời! Con hiểu bài vô cùng chắc chắn đấy.'
                       : 'Làm tốt lắm con ơi! Ôn thêm một chút nữa thôi là điểm mười rồi.'
                   }
@@ -1315,532 +2697,215 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
 
                 <div className="flex gap-4">
                   <button
-                    onClick={() => setSelectedLessonId(null)}
+                    onClick={handleExitLesson}
                     className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-full transition-all cursor-pointer text-sm"
                   >
                     Xem chủ đề khác
                   </button>
                   <button
                     onClick={() => {
+                      handleShuffleQuestions();
                       setUserAnswers({});
                       setCurrentIndex(0);
                       setShowFinishedCard(false);
                     }}
-                    className="flex-1 py-4 bg-vibrant-green text-white font-black rounded-full shadow-[0_4px_0_#1E8449] hover:translate-y-0.5 transition-all cursor-pointer text-sm"
+                    className={`flex-1 py-4 text-white font-black rounded-full shadow-lg transition-all cursor-pointer text-sm ${
+                      isTestMode 
+                        ? 'bg-cyan-500 hover:bg-cyan-600 shadow-[0_4px_0_#0284C7]' 
+                        : 'bg-vibrant-green hover:bg-emerald-600 shadow-[0_4px_0_#1E8449]'
+                    }`}
                   >
-                    Giải lại bài 🔄
+                    {isTestMode ? 'Làm lại kiểm tra 🔄' : 'Giải lại bài 🔄'}
                   </button>
                 </div>
               </motion.div>
             )}
           </div>
         ) : (
-          
-          /* VIEW 2: TEACHER EDIT QUESTIONS SYSTEMS PANEL */
-          <div key="edit-view" className="space-y-6">
-            <div className="flex justify-between items-center bg-amber-50/50 p-4 rounded-2xl border-2 border-amber-200/60">
-              <span className="text-xs font-black text-amber-900 uppercase">
-                ⚙️ Danh sách biên soạn: {questions.length} Câu Hỏi
-              </span>
-              
-              {!showAddQuestionForm && editingQuestionId === null && (
-                <button
-                  onClick={handleStartAddQuestion}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded-xl cursor-pointer flex items-center gap-1 shadow-xs transition-all"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Thêm câu hỏi mới
-                </button>
-              )}
-            </div>
+          /* VIEW 2: TEACHER EDIT QUESTIONS SYSTEMS PANEL (RANGE CONFIG ENGINE) */
+          <div key="edit-view" className="space-y-6 text-left">
+            <div className="bg-gradient-to-br from-amber-50 to-orange-50/70 border-2 border-amber-300 p-6 md:p-8 rounded-[2.5rem] shadow-xs space-y-6">
+              <div className="flex items-center justify-between border-b border-amber-200/60 pb-4">
+                <div>
+                  <h3 className="text-base font-black text-amber-900 flex items-center gap-1.5">
+                    ⚙️ Cấu Hình Đề Ôn Tập: {activeLesson?.title}
+                  </h3>
+                  <p className="text-[11px] font-bold text-amber-700/85 mt-0.5">
+                    Thay đổi tên bài học, biểu tượng và tinh chỉnh số câu hỏi lấy trực tiếp từ Ngân hàng Đề trung tâm.
+                  </p>
+                </div>
+                <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider">
+                  Mã bài: {activeLesson?.id}
+                </span>
+              </div>
 
-            {/* Editing Box Form */}
-            {(showAddQuestionForm || editingQuestionId !== null) && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="bg-amber-50/75 border-4 border-amber-300 p-6 rounded-[2.5rem] space-y-4"
-              >
-                <div className="flex justify-between items-center border-b-2 border-amber-200 pb-3">
-                  <h4 className="text-sm font-black text-amber-900 flex items-center gap-2">
-                    <Edit3 className="w-4 h-4" />
-                    {editingQuestionId ? 'Sửa Câu Hỏi Đang Chọn' : 'Biên Soạn Câu Hỏi Mới'}
-                  </h4>
-                  <button
-                    onClick={() => { setShowAddQuestionForm(false); setEditingQuestionId(null); }}
-                    className="p-1 text-slate-400 hover:text-red-500 rounded-full cursor-pointer"
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+                <div className="md:col-span-8 space-y-1.5">
+                  <label className="text-xs font-black text-amber-900 block">Tên hiển thị của Bài ôn tập:</label>
+                  <input
+                    type="text"
+                    required
+                    value={editLessonTitle}
+                    onChange={e => setEditLessonTitle(e.target.value)}
+                    className="w-full px-4 py-3 bg-white border-2 border-amber-200/80 rounded-2xl text-xs font-bold text-slate-800 focus:border-amber-500 focus:outline-none"
+                    placeholder="Nhập tên bài học hiển thị cho học sinh..."
+                  />
+                </div>
+
+                <div className="md:col-span-4 space-y-1.5">
+                  <label className="text-xs font-black text-amber-900 block">Biểu tượng hiển thị:</label>
+                  <select
+                    value={editLessonEmoji}
+                    onChange={e => setEditLessonEmoji(e.target.value)}
+                    className="w-full px-4 py-3 bg-white border-2 border-amber-200/80 rounded-2xl text-xs font-bold text-slate-800 focus:outline-none focus:border-amber-500 appearance-none text-center"
                   >
-                    <X className="w-4 h-4" />
+                    <option value="💻">💻 Máy tính</option>
+                    <option value="🌐">🌐 Trực tuyến</option>
+                    <option value="🛡️">🛡️ Bảo mật</option>
+                    <option value="🔌">🔌 Thiết bị</option>
+                    <option value="🏆">🏆 Điểm cao</option>
+                    <option value="📝">📝 Bài giảng</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white/80 p-5 rounded-2xl border border-amber-200/50">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-amber-900 block">
+                    Bắt đầu lấy từ câu số (Question Start Index):
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    max={gradeQuestions.length || 100}
+                    value={editLessonStartIdx}
+                    onChange={e => setEditLessonStartIdx(Math.max(1, Number(e.target.value)))}
+                    className="w-full px-4 py-3 bg-white border-2 border-amber-200/80 rounded-2xl text-xs font-bold text-center focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-amber-900 block">
+                    Kết thúc tại câu số (Question End Index):
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={editLessonStartIdx}
+                    max={gradeQuestions.length || 100}
+                    value={editLessonEndIdx}
+                    onChange={e => setEditLessonEndIdx(Math.max(editLessonStartIdx, Number(e.target.value)))}
+                    className="w-full px-4 py-3 bg-white border-2 border-amber-200/80 rounded-2xl text-xs font-bold text-center focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-between items-center bg-amber-50/50 p-4 rounded-2xl border border-amber-200/40 gap-4">
+                <span className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+                  🎯 Khoảng lựa chọn chứa: 
+                  <strong className="text-amber-800 text-sm">
+                    {Math.max(0, editLessonEndIdx - editLessonStartIdx + 1)} Câu hỏi
+                  </strong> 
+                  (Trên tổng số {gradeQuestions.length} câu trong ngân hàng ngân hàng đề).
+                </span>
+
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => setViewTab('study')}
+                    className="flex-1 sm:flex-none px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-black rounded-xl transition-all cursor-pointer"
+                  >
+                    Bỏ qua
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveLessonConfig}
+                    className="flex-1 sm:flex-none px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded-xl cursor-pointer shadow-xs whitespace-nowrap"
+                  >
+                    Lưu cấu hình
                   </button>
                 </div>
+              </div>
+            </div>
 
-                <form onSubmit={handleSaveQuestionDraft} className="space-y-4">
-                  
-                  {/* 1. Nội dung câu hỏi ôn tập & Dạng câu hỏi */}
-                  <div className="bg-white border-2 border-slate-100 p-5 rounded-3xl space-y-4">
-                    <span className="text-xs font-black text-amber-900 uppercase block tracking-wider">
-                      1. Nội dung câu hỏi và thể loại 📝
-                    </span>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-1">
-                        <label className="text-xs font-bold text-amber-800">Dạng câu hỏi ôn luyện:</label>
-                        <select
-                          value={qDraftType}
-                          onChange={e => setQDraftType(e.target.value as any)}
-                          className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-bold focus:outline-none focus:border-amber-500"
-                        >
-                          <option value="choice">🔘 Câu hỏi trắc nghiệm (Chọn 1 đáp án)</option>
-                          <option value="drag_text">🔀 Kéo thả ghép nối chữ (Trái chữ - Phải chữ)</option>
-                          <option value="drag_image_text">🖼️ Kéo thả ghép nối hình ảnh (Trái hình - Phải chữ)</option>
-                        </select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-xs font-bold text-slate-500">Gợi ý:</label>
-                        <div className="text-[11px] font-semibold text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-100 leading-relaxed">
-                          {qDraftType === 'choice' && 'Học sinh sẽ được chọn một trong 4 đáp án liệt kê bên dưới.'}
-                          {qDraftType === 'drag_text' && 'Lướt kéo thả để ghép khớp cặp chữ cột bên trái với định nghĩa cột bên phải.'}
-                          {qDraftType === 'drag_image_text' && 'Học sinh sẽ thực hiện kéo thả các nhãn chữ khớp vào hình ảnh bên trái tương ứng.'}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-black text-amber-800 block">Nội dung câu hỏi / Câu lệnh hướng dẫn:</label>
-                      <textarea
-                        required
-                        placeholder="Ví dụ: Em hãy lựa chọn đáp án phù hợp nhất... hoặc Kéo thả ghép nối các thiết bị..."
-                        value={qDraftText}
-                        onChange={e => setQDraftText(e.target.value)}
-                        rows={2}
-                        className="w-full p-3 bg-white border border-slate-300 rounded-xl font-bold focus:outline-amber-400 focus:outline-none text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  {/* 2. các câu đáp án */}
-                  <div className="bg-white border-2 border-slate-100 p-5 rounded-3xl space-y-4">
-                    <span className="text-xs font-black text-amber-900 uppercase block tracking-wider">
-                      2. Các câu đáp án 💡
-                    </span>
-
-                    {/* Choice matching inputs */}
-                    {qDraftType === 'choice' && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <label className="text-xs font-bold text-slate-500 block flex items-center gap-1">
-                            <span className="w-5 h-5 bg-sky-50 text-sky-700 text-[10px] font-black rounded-md flex items-center justify-center border">A</span>
-                            Phương án A:
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={qDraftOptionA}
-                            onChange={e => setQDraftOptionA(e.target.value)}
-                            className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-xs font-bold text-slate-500 block flex items-center gap-1">
-                            <span className="w-5 h-5 bg-sky-50 text-sky-700 text-[10px] font-black rounded-md flex items-center justify-center border">B</span>
-                            Phương án B:
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={qDraftOptionB}
-                            onChange={e => setQDraftOptionB(e.target.value)}
-                            className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-xs font-bold text-slate-500 block flex items-center gap-1">
-                            <span className="w-5 h-5 bg-sky-50 text-sky-700 text-[10px] font-black rounded-md flex items-center justify-center border">C</span>
-                            Phương án C:
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={qDraftOptionC}
-                            onChange={e => setQDraftOptionC(e.target.value)}
-                            className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-xs font-bold text-slate-500 block flex items-center gap-1">
-                            <span className="w-5 h-5 bg-sky-50 text-sky-700 text-[10px] font-black rounded-md flex items-center justify-center border">D</span>
-                            Phương án D:
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={qDraftOptionD}
-                            onChange={e => setQDraftOptionD(e.target.value)}
-                            className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Drag Text matching inputs */}
-                    {qDraftType === 'drag_text' && (
-                      <div className="space-y-3">
-                        <p className="text-[10px] font-bold text-slate-400 italic mb-2">Thực hiện ghép từ bên trái khớp với định nghĩa bên phải. Hệ thống sẽ tự đảo ngẫu nhiên khi hiển thị.</p>
-                        
-                        <div className="grid grid-cols-2 gap-3 pb-2 border-b border-dashed border-slate-200">
-                          <span className="text-[11px] font-black text-amber-800">Từ Khóa Trái</span>
-                          <span className="text-[11px] font-black text-sky-800">Định Nghĩa Phải Tương Ứng</span>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <input
-                            type="text"
-                            required
-                            placeholder="Ví dụ: RAM"
-                            value={qDraftLeftA}
-                            onChange={e => setQDraftLeftA(e.target.value)}
-                            className="w-full px-3 py-2 bg-amber-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                          <input
-                            type="text"
-                            required
-                            placeholder="Đáp án khớp: Bộ nhớ truy cập ngẫu nhiên"
-                            value={qDraftOptionA}
-                            onChange={e => setQDraftOptionA(e.target.value)}
-                            className="w-full px-3 py-2 bg-sky-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <input
-                            type="text"
-                            required
-                            placeholder="Ví dụ: ROM"
-                            value={qDraftLeftB}
-                            onChange={e => setQDraftLeftB(e.target.value)}
-                            className="w-full px-3 py-2 bg-amber-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                          <input
-                            type="text"
-                            required
-                            placeholder="Đáp án khớp: Bộ nhớ chỉ đọc dữ liệu"
-                            value={qDraftOptionB}
-                            onChange={e => setQDraftOptionB(e.target.value)}
-                            className="w-full px-3 py-2 bg-sky-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <input
-                            type="text"
-                            required
-                            placeholder="Ví dụ: CPU"
-                            value={qDraftLeftC}
-                            onChange={e => setQDraftLeftC(e.target.value)}
-                            className="w-full px-3 py-2 bg-amber-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                          <input
-                            type="text"
-                            required
-                            placeholder="Đáp án khớp: Bộ điều khiển xử lý trung tâm"
-                            value={qDraftOptionC}
-                            onChange={e => setQDraftOptionC(e.target.value)}
-                            className="w-full px-3 py-2 bg-sky-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <input
-                            type="text"
-                            required
-                            placeholder="Ví dụ: Router"
-                            value={qDraftLeftD}
-                            onChange={e => setQDraftLeftD(e.target.value)}
-                            className="w-full px-3 py-2 bg-amber-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                          <input
-                            type="text"
-                            required
-                            placeholder="Đáp án khớp: Thiết bị định tuyến và truyền mạng"
-                            value={qDraftOptionD}
-                            onChange={e => setQDraftOptionD(e.target.value)}
-                            className="w-full px-3 py-2 bg-sky-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Drag Image and Text matching inputs */}
-                    {qDraftType === 'drag_image_text' && (
-                      <div className="space-y-3">
-                        <p className="text-[10px] font-bold text-slate-400 italic mb-2">
-                          Thêm liên kết ảnh trái (lấy từ các file tải lên ở Kho lưu trữ) khớp với nhãn chữ tương ứng ở bên phải.
-                        </p>
-                        
-                        <div className="grid grid-cols-2 gap-3 pb-2 border-b border-dashed border-slate-200">
-                          <span className="text-[11px] font-black text-amber-800">Liên Kết Hình Ảnh Trái (Link URL)</span>
-                          <span className="text-[11px] font-black text-sky-800">Nhãn Khớp Chữ Phải</span>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <input
-                            type="text"
-                            required
-                            placeholder="Đường dẫn ảnh: e.g. /favicon.png"
-                            value={qDraftImageA}
-                            onChange={e => setQDraftImageA(e.target.value)}
-                            className="w-full px-3 py-2 bg-amber-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                          <input
-                            type="text"
-                            required
-                            placeholder="Nhãn khớp: e.g. Thùng rác máy tính"
-                            value={qDraftOptionA}
-                            onChange={e => setQDraftOptionA(e.target.value)}
-                            className="w-full px-3 py-2 bg-sky-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <input
-                            type="text"
-                            required
-                            placeholder="Liên kết hình ảnh B"
-                            value={qDraftImageB}
-                            onChange={e => setQDraftImageB(e.target.value)}
-                            className="w-full px-3 py-2 bg-amber-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                          <input
-                            type="text"
-                            required
-                            placeholder="Nhãn khớp B"
-                            value={qDraftOptionB}
-                            onChange={e => setQDraftOptionB(e.target.value)}
-                            className="w-full px-3 py-2 bg-sky-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <input
-                            type="text"
-                            required
-                            placeholder="Liên kết hình ảnh C"
-                            value={qDraftImageC}
-                            onChange={e => setQDraftImageC(e.target.value)}
-                            className="w-full px-3 py-2 bg-amber-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                          <input
-                            type="text"
-                            required
-                            placeholder="Nhãn khớp C"
-                            value={qDraftOptionC}
-                            onChange={e => setQDraftOptionC(e.target.value)}
-                            className="w-full px-3 py-2 bg-sky-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <input
-                            type="text"
-                            required
-                            placeholder="Liên kết hình ảnh D"
-                            value={qDraftImageD}
-                            onChange={e => setQDraftImageD(e.target.value)}
-                            className="w-full px-3 py-2 bg-amber-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                          <input
-                            type="text"
-                            required
-                            placeholder="Nhãn khớp D"
-                            value={qDraftOptionD}
-                            onChange={e => setQDraftOptionD(e.target.value)}
-                            className="w-full px-3 py-2 bg-sky-50/20 border border-slate-300 rounded-xl font-semibold text-xs"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 3. đáp đúng */}
-                  {qDraftType === 'choice' ? (
-                    <div className="bg-white border-2 border-slate-100 p-5 rounded-3xl space-y-2">
-                      <span className="text-xs font-black text-amber-900 uppercase block tracking-wider">
-                        3. Đáp án đúng chuẩn xác 🌐
-                      </span>
-                      <div className="space-y-1">
-                        <label className="text-xs font-black text-slate-500">Lựa chọn một phương án làm đáp án đúng:</label>
-                        <select
-                          value={qDraftCorrectIndex}
-                          onChange={e => setQDraftCorrectIndex(Number(e.target.value))}
-                          className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-bold focus:outline-none focus:border-amber-500 text-xs"
-                        >
-                          <option value={0}>Phương án A</option>
-                          <option value={1}>Phương án B</option>
-                          <option value={2}>Phương án C</option>
-                          <option value={3}>Phương án D</option>
-                        </select>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-white border-2 border-slate-100 p-5 rounded-3xl">
-                      <span className="text-xs font-black text-amber-900 uppercase block tracking-wider mb-1">
-                        3. Thiết lập nối khớp đúng ✔️
-                      </span>
-                      <p className="text-[11px] font-semibold text-emerald-700 bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 leading-snug">
-                        Hệ thống tự động sử dụng cấu hình đối đầu song song: 
-                        <br />• <strong>Cột Trái A</strong> sẽ ghép khớp chuẩn với <strong>Cặp Phải A</strong>
-                        <br />• <strong>Cột Trái B</strong> khớp chuẩn với <strong>Cặp Phải B</strong>...
-                        <br />Khi học sinh tham gia học tập, hệ thống sẽ tự động xáo trộn vị trí ngẫu nhiên để thử thách!
-                      </p>
-                    </div>
-                  )}
-
-                  {/* 4. Lời giải thích */}
-                  <div className="bg-white border-2 border-slate-100 p-5 rounded-3xl space-y-2">
-                    <span className="text-xs font-black text-amber-900 uppercase block tracking-wider">
-                      4. Lời giải thích chi tiết lý do chuẩn 📚
-                    </span>
-                    <div className="space-y-1">
-                      <label className="text-xs font-black text-slate-500 block">Cung cấp lý do để hỗ trợ học sinh học tập:</label>
-                      <textarea
-                        placeholder="Ví dụ: Định dạng MP4 là một định dạng nén video chuẩn chất lượng cao phổ biến..."
-                        value={qDraftExplanation}
-                        onChange={e => setQDraftExplanation(e.target.value)}
-                        rows={2}
-                        className="w-full p-3 bg-white border border-slate-300 rounded-xl font-bold focus:outline-amber-400 focus:outline-none text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Form Submission Controls */}
-                  <div className="flex gap-2 justify-end pt-2">
-                    <button
-                      type="button"
-                      onClick={() => { setShowAddQuestionForm(false); setEditingQuestionId(null); }}
-                      className="px-5 py-2.5 bg-white border border-slate-300 rounded-xl text-slate-500 font-bold text-xs cursor-pointer"
-                    >
-                      Bỏ qua
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-xl text-xs flex items-center gap-1 shadow-xs cursor-pointer"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      Lưu thông tin
-                    </button>
-                  </div>
-                </form>
-              </motion.div>
-            )}
-
-            {/* Simple list view of questions */}
+            {/* LIVE PREVIEW OF CHOSEN QUESTIONS RANGE */}
             <div className="space-y-4">
-              {questions.map((q, idx) => (
-                <div 
-                  key={q.id}
-                  className="bg-white border-2 border-slate-100 p-5 rounded-[2rem] shadow-xs relative hover:border-amber-200 transition-all flex flex-col md:flex-row gap-4 items-start"
-                >
-                  <div className="w-8 h-8 rounded-full bg-slate-100 font-black text-xs flex items-center justify-center shrink-0 border border-slate-200 text-slate-700">
-                    {idx + 1}
-                  </div>
+              <div className="text-left py-2 border-b-2 border-dashed border-slate-200">
+                <h4 className="text-xs font-extrabold text-slate-500 uppercase tracking-widest">
+                  📝 Xem trước tức thời danh sách câu hỏi trong khoảng đã chọn:
+                </h4>
+              </div>
 
-                  <div className="flex-1 space-y-2 w-full">
-                    <div className="flex items-center gap-2">
-                      <span className={`py-0.5 px-2.5 border font-bold text-[10px] rounded-full uppercase tracking-wider block ${
-                        q.type === 'drag_text' 
-                          ? 'bg-purple-50 text-purple-700 border-purple-200' 
-                          : q.type === 'drag_image_text'
-                            ? 'bg-pink-50 text-pink-700 border-pink-200'
-                            : 'bg-blue-50 text-blue-700 border-blue-200'
-                      }`}>
-                        {q.type === 'drag_text' && '🔀 Ghép nối chữ'}
-                        {q.type === 'drag_image_text' && '🖼️ Ghép nối hình - chữ'}
-                        {(!q.type || q.type === 'choice') && '🔘 Trắc nghiệm'}
-                      </span>
-                      {(!q.type || q.type === 'choice') && (
-                        <span className="text-[10px] font-black text-emerald-600">
-                          ✔️ Đáp án chuẩn: {String.fromCharCode(65 + q.correctIndex)}
-                        </span>
-                      )}
-                    </div>
-
-                    <h5 className="font-extrabold text-sm text-slate-800 leading-snug">{q.text}</h5>
-
-                    {q.type === 'drag_text' && (
-                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 items-center text-xs font-semibold py-1 bg-slate-50/50 p-3 rounded-2xl border border-dotted">
-                        {[0, 1, 2, 3].map(i => (
-                          <div key={i} className="p-1 px-2.5 bg-white border rounded-xl text-[11px] leading-snug">
-                            <span className="text-amber-700 font-extrabold text-[10px]">{q.leftTerms?.[i] || `Từ ${i+1}`}</span>
-                            <div className="text-slate-500 truncate">{q.options[i]}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {q.type === 'drag_image_text' && (
-                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 items-center text-xs font-semibold py-1 bg-slate-50/50 p-3 rounded-2xl border border-dotted">
-                        {[0, 1, 2, 3].map(i => (
-                          <div key={i} className="p-1 px-2.5 bg-white border rounded-xl text-[11px] leading-snug flex items-center gap-2">
-                            {q.leftImages?.[i] ? (
-                              <img src={q.leftImages?.[i]} alt="" className="w-8 h-8 rounded-md object-cover border border-slate-100 shrink-0" referrerPolicy="no-referrer" />
-                            ) : (
-                              <div className="w-8 h-8 bg-slate-100 rounded-md shrink-0 flex items-center justify-center text-[10px] font-bold text-slate-400">?</div>
-                            )}
-                            <div className="text-slate-500 truncate">{q.options[i]}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {(!q.type || q.type === 'choice') && (
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 py-1 text-xs font-semibold text-slate-500">
-                        {q.options.map((opt, oIdx) => (
-                          <div 
-                            key={oIdx}
-                            className={`p-2 rounded-lg border ${
-                              oIdx === q.correctIndex 
-                                ? 'bg-emerald-50 text-emerald-800 border-vibrant-green font-bold' 
-                                : 'bg-slate-50 text-slate-500 border-slate-100'
-                            }`}
-                          >
-                            <span className="font-black mr-1">{String.fromCharCode(65 + oIdx)}:</span>
-                            {opt}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {q.explanation && (
-                      <div className="p-2.5 bg-slate-50 rounded-xl leading-relaxed text-[11px] text-slate-400 font-bold border border-slate-100">
-                        <span className="text-amber-700 block text-[10px] uppercase font-black tracking-wider mb-0.5">💡 Lý giải:</span>
-                        {q.explanation}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Actions buttons */}
-                  <div className="flex md:flex-col gap-1.5 shrink-0 w-full md:w-auto text-right">
-                    <button
-                      onClick={() => handleStartEditQuestion(q)}
-                      className="flex-1 px-3 py-1.5 bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-900 border border-slate-200 font-black text-xs rounded-xl cursor-pointer flex items-center justify-center gap-1 transition-all"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      Sửa
-                    </button>
-                    <button
-                      onClick={() => handleDeleteQuestion(q.id)}
-                      className="flex-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 hover:text-red-700 text-slate-400 border border-slate-200/50 font-black text-xs rounded-xl cursor-pointer flex items-center justify-center gap-1 transition-all"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Xóa
-                    </button>
-                  </div>
+              {gradeQuestions.length === 0 ? (
+                <div className="text-center py-10 font-bold text-xs text-slate-400">
+                  ⚠️ Đang tải câu hỏi từ Ngân hàng đề trung tâm...
                 </div>
-              ))}
+              ) : gradeQuestions.slice(editLessonStartIdx - 1, editLessonEndIdx).length === 0 ? (
+                <div className="text-center py-10 font-bold text-xs text-slate-400">
+                  ⚠️ Không có câu hỏi nào trong khoảng chỉ số này. Hãy điều chỉnh lại chỉ số bắt đầu/kết thúc ở trên.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {gradeQuestions.slice(editLessonStartIdx - 1, editLessonEndIdx).map((q, idx) => (
+                    <div 
+                      key={q.id} 
+                      className="bg-white border-2 border-slate-100 p-5 rounded-[2rem] shadow-xs relative flex flex-col md:flex-row gap-4 items-start text-left"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-slate-100 font-extrabold text-xs flex items-center justify-center shrink-0 border border-slate-200 text-slate-600">
+                        {idx + 1}
+                      </div>
+
+                      <div className="flex-1 space-y-2 w-full">
+                        <div className="flex items-center gap-2">
+                          <span className="bg-purple-100 text-purple-800 text-[9px] font-black px-2 py-0.5 rounded-full uppercase">
+                            Câu số {q.qNum} trong ngân hàng
+                          </span>
+                          
+                          <span className="bg-slate-100 text-slate-600 text-[9px] font-black px-2 py-0.5 rounded-full border border-slate-200">
+                            Loại: {q.type === 'table_match' ? 'Khớp lưới' : q.type === 'drag_text' ? 'Kéo thả' : 'Trắc nghiệm'}
+                          </span>
+                        </div>
+
+                        <div className="text-xs font-bold text-slate-800 leading-normal">
+                          {q.text}
+                        </div>
+
+                        {q.type !== 'table_match' ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                            {q.options && q.options.map((opt, oIdx) => (
+                              <div 
+                                key={oIdx}
+                                className={`p-2.5 rounded-xl border text-[11px] font-semibold flex items-center gap-2 ${
+                                  oIdx === q.correctIndex 
+                                    ? 'bg-emerald-50 text-emerald-800 border-vibrant-green font-bold' 
+                                    : 'bg-slate-50 text-slate-400 border-slate-100'
+                                }`}
+                              >
+                                <span className="font-black mr-1">{oIdx + 1}:</span>
+                                <span>{opt}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-100 text-[10px] font-bold space-y-1 leading-normal text-slate-500">
+                            <div><strong className="text-slate-800">Cột phân loại:</strong> {q.headers?.join(' | ')}</div>
+                            <div><strong className="text-slate-800">Hàng nội dung:</strong> {q.rows?.join(' | ')}</div>
+                            <div className="text-emerald-700 font-extrabold">🎯 Đáp án nối (Cột index): {q.correctAnswers?.join(', ')}</div>
+                          </div>
+                        )}
+
+                        {q.explanation && (
+                          <div className="p-3 bg-amber-50/50 rounded-2xl leading-normal text-[10px] font-bold text-amber-900 border border-amber-100/50">
+                            <strong className="text-amber-800 block text-[10px] uppercase font-black tracking-wider mb-0.5">💡 Giải thích chi tiết:</strong>
+                            {q.explanation}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1908,6 +2973,41 @@ export default function RevisionView({ grade, token, onBackToDashboard, onProgre
               ✕
             </button>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Security alert modal for cheating regulation */}
+      <AnimatePresence>
+        {cheatType && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] max-w-md w-full border-2 border-red-500/30 text-center shadow-2xl relative"
+            >
+              <div className="w-16 h-16 bg-red-50 dark:bg-red-950/40 text-red-500 rounded-full flex items-center justify-center mx-auto mb-5 text-3xl font-black">
+                ⚠️
+              </div>
+              <h3 className="text-xl font-black text-slate-900 dark:text-white mb-3">
+                Phát Hiện Vi Phạm Quy Chế
+              </h3>
+              <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
+                {cheatType === 'fullscreen' && 
+                  "Em đã tự ý THOÁT CHẾ ĐỘ TOÀN MÀN HÌNH trong lúc làm bài ôn tập. Để đảm bảo tính trung thực, kết quả làm bài ôn luyện này đã bị hủy bỏ."}
+                {cheatType === 'tab' && 
+                  "Em đã CHUYỂN TAB hoặc ẨN TRÌNH DUYỆT trong lúc làm bài ôn tập. Để đảm bảo tính trung thực, kết quả làm bài ôn luyện này đã bị hủy bỏ."}
+                {cheatType === 'blur' && 
+                  "Em đã NHẤP CHUỘT RA NGOÀI hoặc CHUYỂN ĐỔI ỨNG DỤNG khác. Để đảm bảo tính trung thực, kết quả làm bài ôn luyện này đã bị hủy bỏ."}
+              </p>
+              <button
+                onClick={() => setCheatType(null)}
+                className="w-full py-4 bg-red-500 hover:bg-red-600 text-white font-black rounded-2xl shadow-lg shadow-red-500/20 transition-all cursor-pointer text-sm"
+              >
+                Trở về và làm lại từ đầu 🔄
+              </button>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

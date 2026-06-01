@@ -15,17 +15,80 @@
   --color-vibrant-blue: #4D96FF;
 }
 
+@variant dark (&:where(.dark, .dark *));
+
+.dark {
+  /* Dynamic Palette overrides according to user's exact dark color guidelines */
+  --color-white: #181818;          /* Elegant pure dark gray card background */
+  --color-slate-50: #121212;       /* Default backdrop & canvas background (#121212) */
+  --color-slate-100: #202020;      /* Elevated layout backgrounds */
+  --color-slate-200: rgba(255, 255, 255, 0.12); /* Division / segment border (bảng màu.phân vùng) */
+  --color-slate-300: rgba(255, 255, 255, 0.2);  /* Active borders / borders on hover */
+  --color-slate-400: rgba(255, 255, 255, 0.3);  /* Disabled state foreground / borders */
+  
+  /* Text Overrides to minimize eye strain and screen glare */
+  --color-slate-900: #ffffff;      /* Primary text (#fff) */
+  --color-slate-800: rgba(255, 255, 255, 0.9);   /* High-contrast body text */
+  --color-slate-700: rgba(255, 255, 255, 0.7);   /* Secondary / supplementary text (rgba 255 255 255 0.7) */
+  --color-slate-600: rgba(255, 255, 255, 0.5);   /* Disabled / inactive text (rgba 255 255 255 0.5) */
+  --color-slate-500: rgba(255, 255, 255, 0.4);   /* Small captions / placeholder text */
+  
+  /* Cozy atmospheric dark containers */
+  --color-orange-50: rgba(255, 255, 255, 0.05);  /* Minimalist overlay */
+  --color-sky-50: rgba(255, 255, 255, 0.04);     /* Minimalist overlay */
+  --color-amber-50: rgba(255, 255, 255, 0.05);   /* Minimalist overlay */
+  --color-emerald-50: rgba(255, 255, 255, 0.04);  /* Minimalist overlay */
+  --color-rose-50: rgba(255, 255, 255, 0.05);     /* Minimalist overlay */
+  --color-indigo-50: rgba(255, 255, 255, 0.04);   /* Minimalist overlay */
+  
+  --color-vibrant-bg: #121212;
+}
+
 /* Cute bouncy bubbles and scrollbar styling */
 ::-webkit-scrollbar {
   width: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: var(--color-slate-50, #f1f5f9);
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--color-slate-200, #cbd5e1);
   border-radius: 5px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--color-slate-300, #94a3b8);
 }
+
+/* 📱 ENHANCED TOUCH & SCROLL PERFORMANCE FOR TABLETS & PHONES */
+html, body {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  overscroll-behavior-y: auto;
+}
+
+/* Force hardware-accelerated momentum scrolling on all overflow containers */
+.overflow-y-auto,
+.overflow-x-auto,
+.overflow-auto,
+[class*="overflow-y-auto"],
+[class*="overflow-x-auto"] {
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior: auto !important;
+}
+
+/* Ensure better performance on transitions */
+* {
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Prevent double-tap zooms and tap delays on tablets */
+button, 
+a, 
+input, 
+select, 
+textarea,
+[role="button"] {
+  touch-action: manipulation;
+}
+

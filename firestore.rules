@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Global Safety Net
+    // Global Safety Net - default deny
     match /{document=**} {
       allow read, write: if false;
     }
@@ -12,33 +12,188 @@ service cloud.firestore {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    // 1. Users Collection
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isValidStudent(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.username is string && data.username.size() <= 100
+        && data.nickname is string && data.nickname.size() <= 100
+        && data.grade is number && data.grade >= 3 && data.grade <= 8
+        && data.school is string && data.school.size() <= 200
+        && data.classroom is string && data.classroom.size() <= 100
+        && data.passwordHash is string && data.passwordHash.size() <= 200
+        && data.salt is string && data.salt.size() <= 100
+        && data.createdAt is string && data.createdAt.size() <= 100
+        && data.role == 'student';
+    }
+
+    function isValidTeacher(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.username is string && data.username.size() <= 100
+        && data.nickname is string && data.nickname.size() <= 100
+        && data.passwordHash is string && data.passwordHash.size() <= 200
+        && data.salt is string && data.salt.size() <= 100
+        && data.createdAt is string && data.createdAt.size() <= 100
+        && (data.role == 'teacher' || data.role == 'admin');
+    }
+
+    function isValidProgress(data) {
+      return data.userId is string && data.userId.size() <= 128
+        && data.grade is number && data.grade >= 3 && data.grade <= 8
+        && data.lessonId is string && data.lessonId.size() <= 128
+        && data.completedQuestions is number && data.completedQuestions >= 0
+        && data.correctAnswers is number && data.correctAnswers >= 0
+        && data.totalQuestions is number && data.totalQuestions >= 0
+        && data.isCompleted is bool
+        && data.lastUpdated is string && data.lastUpdated.size() <= 100;
+    }
+
+    function isValidProgressHomework(data) {
+      return data.userId is string && data.userId.size() <= 128
+        && data.grade is number && data.grade >= 3 && data.grade <= 8
+        && data.lessonId is string && data.lessonId.size() <= 128
+        && data.homeworkId is string && data.homeworkId.size() <= 128
+        && data.completedQuestions is number && data.completedQuestions >= 0
+        && data.correctAnswers is number && data.correctAnswers >= 0
+        && data.totalQuestions is number && data.totalQuestions >= 0
+        && data.isCompleted is bool
+        && data.lastUpdated is string && data.lastUpdated.size() <= 100;
+    }
+
+    function isValidExam(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.grade is number && data.grade >= 3 && data.grade <= 8
+        && data.score is number && data.score >= 0 && data.score <= 100
+        && data.correctCount is number && data.correctCount >= 0
+        && data.totalQuestions is number && data.totalQuestions >= 0
+        && data.durationSeconds is number && data.durationSeconds >= 0
+        && data.isRevisionTest is bool
+        && data.lessonId is string && data.lessonId.size() <= 128
+        && data.lessonTitle is string && data.lessonTitle.size() <= 200
+        && data.createdAt is string && data.createdAt.size() <= 100;
+    }
+
+    function isValidFile(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.fileName is string && data.fileName.size() <= 200
+        && data.fileType is string && data.fileType.size() <= 100
+        && data.fileSize is number && data.fileSize >= 0
+        && data.storagePath is string && data.storagePath.size() <= 500
+        && data.downloadUrl is string && data.downloadUrl.size() <= 1000
+        && data.uploadedAt is string && data.uploadedAt.size() <= 100;
+    }
+
+    function isValidLesson(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.grade is number && data.grade >= 3 && data.grade <= 8
+        && data.lessonNum is number && data.lessonNum >= 1
+        && data.title is string && data.title.size() <= 200
+        && data.emoji is string && data.emoji.size() <= 100
+        && data.qCount is number && data.qCount >= 0
+        && data.questions is list
+        && (data.isCustom == true || data.isCustom == false);
+    }
+
+    function isValidHomework(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.grade is number && data.grade >= 3 && data.grade <= 8
+        && data.school is string && data.school.size() <= 200
+        && data.classroom is string && data.classroom.size() <= 100
+        && data.lessonId is string && data.lessonId.size() <= 128
+        && data.lessonTitle is string && data.lessonTitle.size() <= 200
+        && data.assignedAt is string && data.assignedAt.size() <= 100
+        && data.deadline is string && data.deadline.size() <= 100;
+    }
+
+    function isValidQuestion(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.text is string && data.text.size() <= 2000
+        && data.options is list
+        && data.correctIndex is number && data.correctIndex >= 0
+        && data.explanation is string && data.explanation.size() <= 4000
+        && (!("grade" in data) || (data.grade is number && data.grade >= 3 && data.grade <= 8));
+    }
+
+    // 1. Users Collection (Legacy support)
     match /users/{userId} {
       allow get, write: if isValidId(userId);
       allow list: if true;
     }
 
-    // 2. Progress Collection
+    // 2. Students Collection
+    match /students/{studentId} {
+      allow get: if isValidId(studentId);
+      allow create, update: if isValidId(studentId) && isValidStudent(incoming());
+      allow delete: if isValidId(studentId);
+      allow list: if true;
+    }
+
+    // 3. Teachers Collection
+    match /teachers/{teacherId} {
+      allow get: if isValidId(teacherId);
+      allow create, update: if isValidId(teacherId) && isValidTeacher(incoming());
+      allow delete: if isValidId(teacherId);
+      allow list: if true;
+    }
+
+    // 4. Progress Collection
     match /progress/{progressId} {
-      allow get, write: if isValidId(progressId);
+      allow get: if isValidId(progressId);
+      allow create, update: if isValidId(progressId) && isValidProgress(incoming());
+      allow delete: if isValidId(progressId);
       allow list: if true;
     }
 
-    // 3. Exams Collection
+    // 4.5. ProgressHomework Collection
+    match /progressHomework/{progressHomeworkId} {
+      allow get: if isValidId(progressHomeworkId);
+      allow create, update: if isValidId(progressHomeworkId) && isValidProgressHomework(incoming());
+      allow delete: if isValidId(progressHomeworkId);
+      allow list: if true;
+    }
+
+    // 5. Exams Collection
     match /exams/{examId} {
-      allow get, write: if isValidId(examId);
+      allow get: if isValidId(examId);
+      allow create, update: if isValidId(examId) && isValidExam(incoming());
+      allow delete: if isValidId(examId);
       allow list: if true;
     }
 
-    // 4. Files Collection
+    // 6. Files Collection
     match /files/{fileId} {
-      allow get, write, delete: if isValidId(fileId);
+      allow get: if isValidId(fileId);
+      allow create, update: if isValidId(fileId) && isValidFile(incoming());
+      allow delete: if isValidId(fileId);
       allow list: if true;
     }
 
-    // 5. Lessons Collection
+    // 7. Lessons Collection
     match /lessons/{lessonId} {
-      allow read, write: if true;
+      allow get: if isValidId(lessonId);
+      allow create, update: if isValidId(lessonId) && isValidLesson(incoming());
+      allow delete: if isValidId(lessonId);
+      allow list: if true;
+    }
+
+    // 8. Homeworks Collection
+    match /homeworks/{homeworkId} {
+      allow get: if isValidId(homeworkId);
+      allow create, update: if isValidId(homeworkId) && isValidHomework(incoming());
+      allow delete: if isValidId(homeworkId);
+      allow list: if true;
+    }
+
+    // 9. Questions Collection
+    match /questions/{questionId} {
+      allow get: if isValidId(questionId);
+      allow create, update: if isValidId(questionId) && isValidQuestion(incoming());
+      allow delete: if isValidId(questionId);
+      allow list: if true;
     }
   }
 }

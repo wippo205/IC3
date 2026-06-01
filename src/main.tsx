@@ -17,20 +17,35 @@
   }
 })();
 
-// Suppress safe-to-ignore Firestore BloomFilter warning messages
+// Suppress safe-to-ignore Firestore BloomFilter warning/error messages
 (function() {
   try {
     const originalConsoleError = console.error;
     console.error = function(...args: any[]) {
       const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
       if (
-        msg.includes('BloomFilter error') || 
+        msg.includes('BloomFilter') || 
         msg.includes('BloomFilterError') || 
-        msg.includes('Invalid hash count: 0')
+        msg.includes('Invalid hash count') ||
+        msg.includes('hash count: 0')
       ) {
         return;
       }
       originalConsoleError.apply(console, args);
+    };
+
+    const originalConsoleWarn = console.warn;
+    console.warn = function(...args: any[]) {
+      const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+      if (
+        msg.includes('BloomFilter') || 
+        msg.includes('BloomFilterError') || 
+        msg.includes('Invalid hash count') ||
+        msg.includes('hash count: 0')
+      ) {
+        return;
+      }
+      originalConsoleWarn.apply(console, args);
     };
   } catch (e) {
     // Fail-safe

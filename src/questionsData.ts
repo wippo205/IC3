@@ -1,7 +1,7 @@
 import { Question } from './types';
 
 // Broad base of authentic, educational IC3 questions in Vietnamese
-export const baseQuestions: Question[] = [
+export const baseQuestions: (Question & { category?: string })[] = [
   {
     id: 'hw_1',
     text: 'Thiết bị nào sau đây được coi là "bộ não" của máy tính?',
@@ -262,16 +262,6 @@ export function generateQuestionsForLesson(grade: number, lessonId: number, targ
   const seed = `${grade}-${lessonId}`;
   const rand = seedRandom(seed);
 
-  // Group our base questions by category to ensure balanced selection
-  const categories = ['hardware', 'software', 'network', 'safety', 'skills'] as const;
-  const categorized: Record<string, Question[]> = {
-    hardware: baseQuestions.filter(q => q.category === 'hardware'),
-    software: baseQuestions.filter(q => q.category === 'software'),
-    network: baseQuestions.filter(q => q.category === 'network'),
-    safety: baseQuestions.filter(q => q.category === 'safety'),
-    skills: baseQuestions.filter(q => q.category === 'skills'),
-  };
-
   const results: Question[] = [];
   let availableBase = [...baseQuestions];
 
@@ -281,13 +271,9 @@ export function generateQuestionsForLesson(grade: number, lessonId: number, targ
   const brandNames = ['ASUS', 'HP', 'Dell', 'Lenovo', 'Apple', 'Acer'];
 
   for (let i = 0; i < targetCount; i++) {
-    // Select based on category rotation or flat access
-    const category = categories[i % categories.length];
-    const catList = categorized[category];
-    
     // Choose base question template
-    const baseIndex = Math.floor(rand() * catList.length);
-    const baseQ = catList[baseIndex];
+    const baseIndex = Math.floor(rand() * availableBase.length);
+    const baseQ = availableBase[baseIndex];
 
     // Build custom variation based on counter
     const adj = techAdjectives[Math.floor(rand() * techAdjectives.length)];
@@ -335,7 +321,6 @@ export function generateQuestionsForLesson(grade: number, lessonId: number, targ
       options,
       correctIndex: baseQ.correctIndex,
       explanation,
-      category: baseQ.category
     });
   }
 

@@ -2,7 +2,7 @@
   "entities": {
     "User": {
       "title": "Học Sinh",
-      "description": "Thông tin tài khoản học sinh ôn tập IC3 Spark",
+      "description": "Thông tin tài khoản học sinh ôn tập IC3 Spark (Legacy)",
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "ID duy nhất của học sinh" },
@@ -13,9 +13,43 @@
         "grade": { "type": "number", "description": "Khối lớp (3-8)" },
         "school": { "type": "string", "description": "Trường tiểu học/THCS" },
         "classroom": { "type": "string", "description": "Lớp học" },
-        "createdAt": { "type": "string", "format": "date-time", "description": "Ngày giờ tạo tài khoản" }
+        "createdAt": { "type": "string", "format": "date-time", "description": "Ngày giờ tạo tài khoản" },
+        "role": { "type": "string", "description": "Vai trò tài khoản" }
       },
       "required": ["id", "username", "passwordHash", "salt", "nickname", "grade", "school", "classroom", "createdAt"]
+    },
+    "Student": {
+      "title": "Tài khoản Học Sinh",
+      "description": "Thông tin tài khoản học sinh ôn tập học liệu",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID duy nhất của học sinh" },
+        "username": { "type": "string", "description": "Tên đăng nhập viết thường" },
+        "passwordHash": { "type": "string", "description": "Mật khẩu đã được mã hóa" },
+        "salt": { "type": "string", "description": "Chuỗi tẩm muối bảo mật" },
+        "nickname": { "type": "string", "description": "Tên học sinh" },
+        "grade": { "type": "number", "description": "Khối lớp (3-8)" },
+        "school": { "type": "string", "description": "Trường tiểu học/THCS" },
+        "classroom": { "type": "string", "description": "Lớp học" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Ngày giờ tạo tài khoản" },
+        "role": { "type": "string", "description": "Vai trò học sinh" }
+      },
+      "required": ["id", "username", "passwordHash", "salt", "nickname", "grade", "school", "classroom", "createdAt"]
+    },
+    "Teacher": {
+      "title": "Tài khoản Giáo Viên",
+      "description": "Thông tin tài khoản giáo viên quản trị bộ đề và theo dõi kết quả",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID duy nhất của giáo viên" },
+        "username": { "type": "string", "description": "Tên đăng nhập viết thường" },
+        "passwordHash": { "type": "string", "description": "Mật khẩu đã được mã hóa" },
+        "salt": { "type": "string", "description": "Chuỗi tẩm muối bảo mật" },
+        "nickname": { "type": "string", "description": "Tên giáo viên" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Ngày giờ tạo tài khoản" },
+        "role": { "type": "string", "description": "Vai trò giáo viên" }
+      },
+      "required": ["id", "username", "passwordHash", "salt", "nickname", "createdAt"]
     },
     "Progress": {
       "title": "Tiến Trình Học Tập",
@@ -65,16 +99,85 @@
         "uploadedAt": { "type": "string", "format": "date-time", "description": "Thời gian tải lên" }
       },
       "required": ["id", "userId", "fileName", "fileType", "fileSize", "uploadedAt"]
+    },
+    "Homework": {
+      "title": "Bài Tập Về Nhà",
+      "description": "Các bài ôn tập được giáo viên giao cho học sinh làm về nhà",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID duy nhất của bài tập" },
+        "grade": { "type": "number", "description": "Khối lớp được giao" },
+        "school": { "type": "string", "description": "Trường học được giao" },
+        "classroom": { "type": "string", "description": "Lớp học được giao" },
+        "lessonId": { "type": "string", "description": "ID bài học được giao" },
+        "lessonTitle": { "type": "string", "description": "Tiêu đề bài học được giao" },
+        "assignedAt": { "type": "string", "format": "date-time", "description": "Mốc thời gian giao bài" },
+        "deadline": { "type": "string", "format": "date-time", "description": "Hạn chót hoàn thành" }
+      },
+      "required": ["id", "grade", "school", "classroom", "lessonId", "lessonTitle", "assignedAt", "deadline"]
+    },
+    "ProgressHomework": {
+      "title": "Tiến Trình Bài Tập Về Nhà",
+      "description": "Tiến trình hoàn thành các bài tập về nhà của học sinh",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "ID của học sinh sở hữu" },
+        "grade": { "type": "number", "description": "Khối lớp tương ứng" },
+        "lessonId": { "type": "string", "description": "ID bài học" },
+        "homeworkId": { "type": "string", "description": "ID bài tập về nhà" },
+        "completedQuestions": { "type": "number", "description": "Số câu hỏi đã hoàn thành" },
+        "correctAnswers": { "type": "number", "description": "Số câu trả lời đúng" },
+        "totalQuestions": { "type": "number", "description": "Tổng số câu hỏi" },
+        "isCompleted": { "type": "boolean", "description": "Đã hoàn thành bài học chưa" },
+        "lastUpdated": { "type": "string", "format": "date-time", "description": "Ngày giờ cập nhật cuối cùng" }
+      },
+      "required": ["userId", "grade", "lessonId", "homeworkId", "completedQuestions", "correctAnswers", "totalQuestions", "isCompleted", "lastUpdated"]
+    },
+    "Question": {
+      "title": "Câu Hỏi Ngân Hàng Đề",
+      "description": "Câu hỏi ôn tập trong Ngân hàng đề trung tâm",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID duy nhất của câu hỏi" },
+        "text": { "type": "string", "description": "Nội dung câu hỏi" },
+        "options": { "type": "array", "description": "Các phương án trả lời" },
+        "correctIndex": { "type": "number", "description": "Vị trí đáp án đúng (bắt đầu từ 0)" },
+        "explanation": { "type": "string", "description": "Giải thích đáp án" },
+        "grade": { "type": "number", "description": "Khối lớp của câu hỏi (3, 4, 5, 6, 7, 8)" },
+        "type": { "type": "string", "description": "Loại câu hỏi", "enum": ["choice", "drag_text", "drag_image_text", "table_match"] },
+        "leftTerms": { "type": "array", "description": "Vập ghép bên trái (loại kéo thả)" },
+        "leftImages": { "type": "array", "description": "Hình ảnh ghép bên trái (loại kéo thả hình)" },
+        "headers": { "type": "array", "description": "Tiêu đề cột (loại bảng ghép)" },
+        "rows": { "type": "array", "description": "Tiêu đề dòng (loại bảng ghép)" },
+        "correctAnswers": { "type": "array", "description": "Mảng đáp án đúng tương ứng (loại bảng ghép)" },
+        "tableFontSize": { "type": "string", "description": "Cỡ chữ hiển thị bảng", "enum": ["sm", "md", "lg"] },
+        "tableWidth": { "type": "string", "description": "Độ rộng bảng hiển thị", "enum": ["compact", "normal", "wide"] },
+        "qNum": { "type": "number", "description": "Chỉ số số thứ tự câu hỏi" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Ngày giờ tạo câu hỏi" }
+      },
+      "required": ["id", "text", "options", "correctIndex", "explanation"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "User",
-      "description": "Cơ sở dữ liệu người dùng/học sinh hệ thống"
+      "description": "Cơ sở dữ liệu người dùng/học sinh hệ thống (Legacy)"
+    },
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Cơ sở dữ liệu tài khoản học sinh"
+    },
+    "/teachers/{teacherId}": {
+      "schema": "Teacher",
+      "description": "Cơ sở dữ liệu tài khoản giáo viên"
     },
     "/progress/{progressId}": {
       "schema": "Progress",
       "description": "Tiến trình học tập chi tiết của học sinh"
+    },
+    "/progressHomework/{progressHomeworkId}": {
+      "schema": "ProgressHomework",
+      "description": "Tiến trình bài tập về nhà chi tiết của học sinh"
     },
     "/exams/{examId}": {
       "schema": "Exam",
@@ -83,6 +186,14 @@
     "/files/{fileId}": {
       "schema": "File",
       "description": "Metadata quản lý các tệp thông tin trong học phần"
+    },
+    "/homeworks/{homeworkId}": {
+      "schema": "Homework",
+      "description": "Cơ sở dữ liệu lưu các bài tập về nhà do giáo viên giao"
+    },
+    "/questions/{questionId}": {
+      "schema": "Question",
+      "description": "Ngân hàng đề câu hỏi ôn tập IC3 Spark trung tâm"
     }
   }
 }
