@@ -545,7 +545,8 @@ async function saveUserProgress(
   totalQuestions: number,
   isCompleted: boolean
 ): Promise<any[]> {
-  const docId = `${userId}_${grade}_${lessonId}`;
+  const rawDocId = `${userId}_${grade}_${lessonId}`;
+  const docId = rawDocId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const sanitizedGrade = Math.round(Number(grade)) || 3;
   const sanitizedCompletedQuestions = Math.round(Number(completedQuestions)) || 0;
   const sanitizedCorrectAnswers = Math.round(Number(correctAnswers)) || 0;
@@ -621,7 +622,8 @@ async function saveUserHomeworkProgress(
   totalQuestions: number,
   isCompleted: boolean
 ): Promise<any[]> {
-  const docId = `${userId}_${grade}_${lessonId}_${homeworkId}`;
+  const rawDocId = `${userId}_${grade}_${lessonId}_${homeworkId}`;
+  const docId = rawDocId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const sanitizedGrade = Math.round(Number(grade)) || 3;
   const sanitizedCompletedQuestions = Math.round(Number(completedQuestions)) || 0;
   const sanitizedCorrectAnswers = Math.round(Number(correctAnswers)) || 0;
@@ -2082,10 +2084,15 @@ app.post('/api/homework/assign', authMiddleware, async (req: any, res) => {
     return res.status(400).json({ error: 'Dữ liệu giao bài tập bị thiếu.' });
   }
 
-  const todayEnd = new Date();
-  todayEnd.setHours(23, 59, 59, 999);
+  // Set the deadline to 30 days from now to give students ample time and avoid timezone/expiration issues entirely
+  const dObj = new Date();
+  dObj.setDate(dObj.getDate() + 30); // 30 days from now
+  const deadlineDate = dObj;
 
-  const hwId = `hw_${grade}_${classroom}_${lessonId}_${Date.now()}`;
+  // Sanitize classroom and lessonId to make a strictly valid Firestore document ID matching: ^[a-zA-Z0-9_\-]+$
+  const safeClassroom = String(classroom).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+  const safeLessonId = String(lessonId).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+  const hwId = `hw_${grade}_${safeClassroom}_${safeLessonId}_${Date.now()}`;
   const newHw = {
     id: hwId,
     grade: Number(grade),
@@ -2094,7 +2101,7 @@ app.post('/api/homework/assign', authMiddleware, async (req: any, res) => {
     lessonId: String(lessonId),
     lessonTitle: String(lessonTitle),
     assignedAt: new Date().toISOString(),
-    deadline: todayEnd.toISOString()
+    deadline: deadlineDate.toISOString()
   };
 
   try {

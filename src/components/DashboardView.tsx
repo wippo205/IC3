@@ -55,11 +55,23 @@ export default function DashboardView({ user, token, revisionProgress, homeworkP
   // 1. Filter to revision tests only
   const revisionExams = examRecords.filter(e => e.isRevisionTest);
 
+  // Helper for soft comparison of school name (ignores whitespace and case-insensitive)
+  const isSchoolMatch = (s1: string, s2: string): boolean => {
+    const clean = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, '');
+    return clean(s1) === clean(s2);
+  };
+
+  // Helper for comparing school classrooms very leniently (stripping non-alphanumeric e.g., 6/1, 6.1, 6-1, 61 -> 61)
+  const isClassroomMatch = (c1: string, c2: string): boolean => {
+    const clean = (s: string) => (s || '').trim().toLowerCase().replace(/[^a-z0-9]/gi, '');
+    return clean(c1) === clean(c2);
+  };
+
   // Filter and sort user's class assignments
   const myAssignments = assignments.filter((h: any) =>
-    h.grade === user.grade &&
-    (h.school || '').trim().toLowerCase() === (user.school || '').trim().toLowerCase() &&
-    (h.classroom || '').trim().toLowerCase() === (user.classroom || '').trim().toLowerCase()
+    Number(h.grade) === Number(user.grade) &&
+    isSchoolMatch(h.school, user.school || '') &&
+    isClassroomMatch(h.classroom, user.classroom || '')
   );
   const sortedMyAssignments = [...myAssignments].sort((a, b) => 
     new Date(b.assignedAt).getTime() - new Date(a.assignedAt).getTime()
@@ -168,9 +180,9 @@ export default function DashboardView({ user, token, revisionProgress, homeworkP
       {/* Homework Alert */}
       {(() => {
         const studentActiveHws = assignments.filter((h: any) => 
-          h.grade === user.grade && 
-          (h.school || '').trim().toLowerCase() === (user.school || '').trim().toLowerCase() && 
-          (h.classroom || '').trim().toLowerCase() === (user.classroom || '').trim().toLowerCase() &&
+          Number(h.grade) === Number(user.grade) && 
+          isSchoolMatch(h.school, user.school || '') && 
+          isClassroomMatch(h.classroom, user.classroom || '') &&
           new Date().getTime() <= new Date(h.deadline).getTime()
         );
 

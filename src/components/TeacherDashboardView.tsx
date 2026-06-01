@@ -173,6 +173,16 @@ function StudentExamHistoryList({ exams, grade }: { exams: any[]; grade: number 
   );
 }
 
+const isSchoolMatch = (s1: string, s2: string): boolean => {
+  const clean = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, '');
+  return clean(s1) === clean(s2);
+};
+
+const isClassroomMatch = (c1: string, c2: string): boolean => {
+  const clean = (s: string) => (s || '').trim().toLowerCase().replace(/[^a-z0-9]/gi, '');
+  return clean(c1) === clean(c2);
+};
+
 export default function TeacherDashboardView({ user, token, onLogout, isDarkMode, onToggleTheme }: TeacherDashboardViewProps) {
   const [activeTab, setActiveTab] = useState<'scoreboard' | 'curriculum' | 'questionbank' | 'materials'>(() => {
     return (localStorage.getItem('wippo_teacher_active_tab') as 'scoreboard' | 'curriculum' | 'questionbank' | 'materials') || 'scoreboard';
@@ -511,9 +521,9 @@ export default function TeacherDashboardView({ user, token, onLogout, isDarkMode
 
     // Find if there's any homework assigned for this student's class (only consider active/unexpired, sorted to get the latest)
     const activeStudentHws = assignments.filter((h: any) => 
-      h.grade === student.grade && 
-      (h.school || '').trim().toLowerCase() === (student.school || '').trim().toLowerCase() && 
-      (h.classroom || '').trim().toLowerCase() === (student.classroom || '').trim().toLowerCase() &&
+      Number(h.grade) === Number(student.grade) && 
+      isSchoolMatch(h.school, student.school || '') && 
+      isClassroomMatch(h.classroom, student.classroom || '') &&
       new Date().getTime() <= new Date(h.deadline).getTime()
     );
 
@@ -1224,9 +1234,9 @@ export default function TeacherDashboardView({ user, token, onLogout, isDarkMode
                                                       {/* Class Header Row */}
                                                       {(() => {
                                                         const classHw = assignments.find((h: any) => 
-                                                          h.grade === gradeVal && 
-                                                          (h.school || '').trim().toLowerCase() === schoolName.trim().toLowerCase() && 
-                                                          (h.classroom || '').trim().toLowerCase() === classroomName.trim().toLowerCase()
+                                                          Number(h.grade) === Number(gradeVal) && 
+                                                          isSchoolMatch(h.school, schoolName) && 
+                                                          isClassroomMatch(h.classroom, classroomName)
                                                         );
 
                                                         return (
@@ -1539,7 +1549,7 @@ export default function TeacherDashboardView({ user, token, onLogout, isDarkMode
             ) : (
               <div className="space-y-4">
                 <div className="bg-slate-50/85 p-3 rounded-2xl text-[11px] font-semibold text-slate-500 leading-relaxed border border-slate-100">
-                  <span className="text-amber-600 font-black">💡 Quy luật tự động:</span> Khi giáo viên giao bài, thời hạn sẽ tự động là <span className="text-sky-600 font-black">hết ngày hôm nay</span>. Các em đạt từ <span className="text-emerald-500 font-black">90% trở lên</span> sẽ ở trạng thái <span className="text-emerald-600 font-extrabold">"Đạt"</span>.
+                  <span className="text-amber-600 font-black">💡 Quy luật tự động:</span> Khi giáo viên giao bài, thời hạn sẽ tự động là <span className="text-sky-600 font-black">30 ngày</span> để các em thong thả luyện tập. Các em đạt từ <span className="text-emerald-500 font-black">90% trở lên</span> sẽ ở trạng thái <span className="text-emerald-600 font-extrabold">"Đạt"</span>.
                 </div>
 
                 <div className="space-y-2">
