@@ -16,13 +16,14 @@ export interface Question {
   correctIndex: number; // 0-based
   explanation: string;
   grade?: number; // 3, 4, 5, 6, 7, 8 (associating with specific grades)
-  type?: 'choice' | 'drag_text' | 'drag_image_text' | 'table_match';
+  type?: 'choice' | 'drag_text' | 'drag_image_text' | 'table_match' | 'multi_choice' | 'image_choice';
   leftTerms?: string[];
   leftImages?: string[];
   // For custom table matching question types
   headers?: string[];
   rows?: string[];
   correctAnswers?: number[];
+  correctIndices?: number[]; // indices of correct answers for multi_choice selection
   tableFontSize?: 'sm' | 'md' | 'lg';
   tableWidth?: 'compact' | 'normal' | 'wide';
 }

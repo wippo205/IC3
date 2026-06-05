@@ -136,11 +136,18 @@ export default function RevisionView({
   // Active quiz playing states
   const [currentIndex, setCurrentIndex] = useState(0);
   const [userAnswers, setUserAnswers] = useState<Record<number, number>>({});
+  const [selectedMultiOptions, setSelectedMultiOptions] = useState<number[]>([]);
+  const [isMultiConfirmed, setIsMultiConfirmed] = useState<boolean>(false);
   const [showFinishedCard, setShowFinishedCard] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
   const [isTestMode, setIsTestMode] = useState(false);
-  const [testMatchingAnswers, setTestMatchingAnswers] = useState<Record<number, Record<number, string | null>>>({});
+  const [testMatchingAnswers, setTestMatchingAnswers] = useState<Record<number, Record<number, string | null>>>( {});
   const [testAvailableCards, setTestAvailableCards] = useState<Record<number, string[]>>({});
+
+  useEffect(() => {
+    setSelectedMultiOptions([]);
+    setIsMultiConfirmed(false);
+  }, [currentIndex, selectedLessonId]);
 
   useEffect(() => {
     if (isTeacherMode) return;
@@ -403,6 +410,22 @@ export default function RevisionView({
               options: shufOpts,
               correctIndex: newCorrectIdx >= 0 ? newCorrectIdx : 0
             };
+          } else if (q.type === 'multi_choice') {
+            const correctOpts = (q.correctIndices || []).map(index => optionsCopy[index] || '').filter(Boolean);
+            const shufOpts = [...optionsCopy]
+              .map(o => ({ o, sort: Math.random() }))
+              .sort((a, b) => a.sort - b.sort)
+              .map(({ o }) => o);
+            const newCorrectIndices = correctOpts
+              .map(opt => shufOpts.indexOf(opt))
+              .filter(index => index >= 0)
+              .sort((a, b) => a - b);
+            return {
+              ...q,
+              options: shufOpts,
+              correctIndices: newCorrectIndices,
+              correctIndex: newCorrectIndices[0] || 0
+            };
           } else if (q.type === 'drag_text' || q.type === 'drag_image_text') {
             const pairings = optionsCopy.map((option, i) => ({
               leftTerm: q.leftTerms?.[i] || '',
@@ -561,7 +584,7 @@ export default function RevisionView({
       const q = quizQuestions[parsedIdx];
       if (!q) return acc;
       const val = updatedAnswers[parsedIdx];
-      const checkCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text' || q.type === 'table_match') ? val === 100 : val === q.correctIndex;
+      const checkCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text' || q.type === 'table_match' || q.type === 'multi_choice' || q.type === 'image_choice') ? val === 100 : val === q.correctIndex;
       return checkCorrect ? acc + 1 : acc;
     }, 0);
 
@@ -664,7 +687,7 @@ export default function RevisionView({
       const q = quizQuestions[parsedIdx];
       if (!q) return acc;
       const val = updatedAnswers[parsedIdx];
-      const checkCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text' || q.type === 'table_match') ? val === 100 : val === q.correctIndex;
+      const checkCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text' || q.type === 'table_match' || q.type === 'multi_choice' || q.type === 'image_choice') ? val === 100 : val === q.correctIndex;
       return checkCorrect ? acc + 1 : acc;
     }, 0);
 
@@ -678,6 +701,77 @@ export default function RevisionView({
     );
 
     triggerAlert(isAllCorrect ? 'Tuyệt vời! Toàn bộ bảng đã khớp chính xác! 🎉' : 'Rất tiếc, vẫn còn một số hàng chưa chính xác. Hãy tiếp tục cố gắng nhé!', isAllCorrect ? 'success' : 'error');
+  };
+
+  const areArraysEqual = (arr1: number[], arr2: number[]) => {
+    if (arr1.length !== arr2.length) return false;
+    const s1 = [...arr1].sort((a, b) => a - b);
+    const s2 = [...arr2].sort((a, b) => a - b);
+    return s1.every((val, index) => val === s2[index]);
+  };
+
+  const handleToggleMultiOption = (optionIndex: number) => {
+    if (!activeLesson) return;
+    if (!isTestMode && isMultiConfirmed) return; // already confirmed in study mode
+
+    let nextSelected: number[] = [];
+    if (selectedMultiOptions.includes(optionIndex)) {
+      nextSelected = selectedMultiOptions.filter(idx => idx !== optionIndex);
+    } else {
+      nextSelected = [...selectedMultiOptions, optionIndex].sort((a, b) => a - b);
+    }
+    setSelectedMultiOptions(nextSelected);
+
+    if (isTestMode) {
+      const q = quizQuestions[currentIndex];
+      if (q) {
+        if (nextSelected.length > 0) {
+          const isCorrect = areArraysEqual(nextSelected, q.correctIndices || []);
+          setUserAnswers(prev => ({ ...prev, [currentIndex]: isCorrect ? 100 : 200 }));
+        } else {
+          setUserAnswers(prev => {
+            const copy = { ...prev };
+            delete copy[currentIndex];
+            return copy;
+          });
+        }
+      }
+    }
+  };
+
+  const handleConfirmMultiChoice = () => {
+    const q = quizQuestions[currentIndex];
+    if (!q || selectedMultiOptions.length === 0) return;
+
+    const isCorrect = areArraysEqual(selectedMultiOptions, q.correctIndices || []);
+    const updatedAnswers = { ...userAnswers, [currentIndex]: isCorrect ? 100 : 200 };
+    setUserAnswers(updatedAnswers);
+    setIsMultiConfirmed(true);
+
+    const correctCount = Object.keys(updatedAnswers).reduce((acc, qIdx) => {
+      const parsedIdx = Number(qIdx);
+      const curQ = quizQuestions[parsedIdx];
+      if (!curQ) return acc;
+      const val = updatedAnswers[parsedIdx];
+      const checkCorrect = (curQ.type === 'drag_text' || curQ.type === 'drag_image_text' || curQ.type === 'table_match' || curQ.type === 'multi_choice' || curQ.type === 'image_choice') ? val === 100 : val === curQ.correctIndex;
+      return checkCorrect ? acc + 1 : acc;
+    }, 0);
+
+    const answeredCount = Object.keys(updatedAnswers).length;
+    saveProgressToServer(
+      selectedLessonId!,
+      answeredCount,
+      correctCount,
+      quizQuestions.length,
+      answeredCount === quizQuestions.length
+    );
+
+    triggerAlert(
+      isCorrect 
+        ? 'Tuyệt vời! Em đã chọn chính xác hoàn toàn các đáp án đúng! 🎉' 
+        : 'Rất tiếc, câu trả lời chưa chính xác. Hãy ôn lại kiến thức và tiếp tục cố gắng nhé!', 
+      isCorrect ? 'success' : 'error'
+    );
   };
 
   // Handle quiz options selection (for multiple choice)
@@ -694,7 +788,7 @@ export default function RevisionView({
         const q = quizQuestions[parsedIdx];
         if (!q) return acc;
         const val = updatedAnswers[parsedIdx];
-        const checkCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text' || q.type === 'table_match') ? val === 100 : val === q.correctIndex;
+        const checkCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text' || q.type === 'table_match' || q.type === 'multi_choice' || q.type === 'image_choice') ? val === 100 : val === q.correctIndex;
         return checkCorrect ? acc + 1 : acc;
       }, 0);
    
@@ -1111,7 +1205,7 @@ export default function RevisionView({
     const q = quizQuestions[parsedIdx];
     if (!q) return acc;
     const ansVal = userAnswers[parsedIdx];
-    const isCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text' || q.type === 'table_match') ? ansVal === 100 : ansVal === q.correctIndex;
+    const isCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text' || q.type === 'table_match' || q.type === 'multi_choice') ? ansVal === 100 : ansVal === q.correctIndex;
     return isCorrect ? acc + 1 : acc;
   }, 0);
 
@@ -1475,10 +1569,10 @@ export default function RevisionView({
                   onChange={e => setQDraftType(e.target.value as any)}
                   className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-bold focus:outline-none focus:border-amber-500 text-xs"
                 >
-                  <option value="choice">🔘 Câu hỏi trắc nghiệm (Chọn 1 đáp án)</option>
-                  <option value="drag_text">🔀 Kéo thả ghép nối chữ (Trái chữ - Phải chữ)</option>
-                  <option value="drag_image_text">🖼️ Kéo thả ghép nối hình ảnh (Trái hình - Phải chữ)</option>
-                  <option value="table_match">📊 Ghép nối bảng (Tùy chỉnh cột, hàng, cỡ chữ & độ rộng)</option>
+                  <option value="choice">🔘 Câu hỏi trắc nghiệm</option>
+                  <option value="drag_text">🔀 Kéo thả ghép nối chữ</option>
+                  <option value="drag_image_text">🖼️ Kéo thả ghép nối hình ảnh</option>
+                  <option value="table_match">📊 Ghép nối bảng</option>
                 </select>
               </div>
 
@@ -2116,11 +2210,15 @@ export default function RevisionView({
                             ? 'bg-pink-50 text-pink-700 border-pink-200'
                             : quizQuestions[currentIndex]?.type === 'table_match'
                               ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                              : 'bg-blue-50 text-blue-700 border-blue-200'
+                              : quizQuestions[currentIndex]?.type === 'image_choice'
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-blue-50 text-blue-700 border-blue-200'
                       }`}>
                         {quizQuestions[currentIndex]?.type === 'drag_text' && '🔀 Ghép nối chữ'}
                         {quizQuestions[currentIndex]?.type === 'drag_image_text' && '🖼️ Ghép nối hình - chữ'}
                         {quizQuestions[currentIndex]?.type === 'table_match' && '📊 Ghép nối bảng'}
+                        {quizQuestions[currentIndex]?.type === 'multi_choice' && '☑️ Trắc nghiệm chọn nhiều đáp án'}
+                        {quizQuestions[currentIndex]?.type === 'image_choice' && '🖼️ Trắc nghiệm chọn hình ảnh'}
                         {(!quizQuestions[currentIndex]?.type || quizQuestions[currentIndex]?.type === 'choice') && '🔘 Trắc nghiệm chọn đáp án'}
                       </span>
                       
@@ -2502,61 +2600,201 @@ export default function RevisionView({
                         )}
                       </div>
                     ) : (
-                      /* Traditional Multiple Choice Grid rendering */
-                      <div className="grid grid-cols-1 gap-3">
-                        {quizQuestions[currentIndex]?.options.map((option, idx) => {
-                          const selectedOption = userAnswers[currentIndex];
-                          const isAnswered = isTestMode ? false : selectedOption !== undefined;
-                          const isThisSelected = selectedOption === idx;
-                          const isCorrectOption = idx === quizQuestions[currentIndex]?.correctIndex;
+                      /* Traditional or Image Multiple Choice Grid rendering */
+                      quizQuestions[currentIndex]?.type === 'image_choice' ? (
+                        /* GORGEOUS IMAGE CHOICE GRID RENDERING */
+                        <div className="space-y-4 font-sans">
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
+                            {quizQuestions[currentIndex]?.options.map((option, idx) => {
+                              const curQ = quizQuestions[currentIndex];
+                              const selectedOption = userAnswers[currentIndex];
+                              const isAnswered = isTestMode ? false : selectedOption !== undefined;
+                              
+                              const isThisSelected = selectedMultiOptions.includes(idx);
+                              const isCorrectOption = (curQ?.correctIndices || []).includes(idx);
 
-                          let optionStyle = "";
-                          if (isTestMode) {
-                            if (isThisSelected) {
-                              optionStyle = "bg-indigo-50 border-2 border-indigo-500 font-bold shadow-[0_4px_0_#4F46E5] text-indigo-900";
-                            } else {
-                              optionStyle = "bg-white border-2 border-slate-200 hover:border-vibrant-blue shadow-[0_4px_0_#E2E8F0] active:translate-y-0.5 text-slate-800";
-                            }
-                          } else {
-                            if (isAnswered) {
-                              if (isCorrectOption) {
-                                optionStyle = "bg-emerald-50 text-emerald-950 border-2 border-vibrant-green font-bold shadow-[0_4px_0_#2ECC71] text-emerald-900";
-                              } else if (isThisSelected) {
-                                optionStyle = "bg-rose-50 text-rose-950 border-2 border-vibrant-pink/80 font-bold shadow-[0_4px_0_#E74C3C] text-rose-950";
+                              let cardStyle = "";
+                              if (isTestMode) {
+                                if (isThisSelected) {
+                                  cardStyle = "bg-indigo-50 border-3 border-indigo-500 shadow-[0_6px_0_#4F46E5] scale-[1.02] text-indigo-900";
+                                } else {
+                                  cardStyle = "bg-white border-3 border-slate-200 hover:border-indigo-400 shadow-[0_6px_0_#F1F5F9] hover:translate-y-[-2px] active:translate-y-0.5 text-slate-800";
+                                }
                               } else {
-                                optionStyle = "bg-slate-50 text-slate-400 border border-slate-200/40 opacity-50 cursor-not-allowed";
+                                if (isAnswered) {
+                                  if (isCorrectOption) {
+                                    cardStyle = "bg-emerald-50 text-emerald-950 border-3 border-emerald-500 font-bold shadow-[0_6px_0_#10B981]";
+                                  } else if (isThisSelected) {
+                                    cardStyle = "bg-rose-50 text-rose-950 border-3 border-rose-400 font-bold shadow-[0_6px_0_#F43F5E]";
+                                  } else {
+                                    cardStyle = "bg-slate-50/50 text-slate-400 border border-slate-200/40 opacity-40 cursor-not-allowed";
+                                  }
+                                } else {
+                                  if (isThisSelected) {
+                                    cardStyle = "bg-purple-50 border-3 border-purple-500 shadow-[0_6px_0_#8B5CF6] scale-[1.02] text-purple-900";
+                                  } else {
+                                    cardStyle = "bg-white border-3 border-slate-200 hover:border-purple-400 shadow-[0_6px_0_#F1F5F9] hover:translate-y-[-2px] active:translate-y-0.5 text-slate-800";
+                                  }
+                                }
                               }
-                            } else {
-                              optionStyle = "bg-white border-2 border-slate-200 hover:border-vibrant-blue shadow-[0_4px_0_#E2E8F0] active:translate-y-0.5 text-slate-800";
-                            }
-                          }
 
-                          return (
-                            <motion.button
-                              key={idx}
-                              whileHover={!isAnswered ? { x: 4 } : {}}
-                              whileTap={!isAnswered ? { scale: 0.99 } : {}}
-                              disabled={isAnswered}
-                              onClick={() => handleSelectOption(idx)}
-                              className={`w-full text-left p-4 rounded-2xl font-semibold text-sm flex items-center justify-between transition-all cursor-pointer ${optionStyle}`}
-                            >
-                              <div className="flex items-center gap-3 pr-2">
-                                <span className={`w-8 h-8 rounded-lg ${isThisSelected && isTestMode ? 'bg-[#EEF2FF] border-indigo-200' : isAnswered ? 'bg-[#D1FAE5]' : 'bg-slate-100'} border text-xs font-black flex items-center justify-center shrink-0`}>
-                                  {String.fromCharCode(65 + idx)}
-                                </span>
-                                <span className="leading-snug">{option}</span>
-                              </div>
+                              return (
+                                <motion.button
+                                  key={idx}
+                                  type="button"
+                                  whileHover={!isAnswered ? { scale: 1.02 } : {}}
+                                  whileTap={!isAnswered ? { scale: 0.98 } : {}}
+                                  disabled={isAnswered}
+                                  onClick={() => handleToggleMultiOption(idx)}
+                                  className={`relative w-full rounded-3xl p-4 flex flex-col justify-between items-center transition-all cursor-pointer aspect-square bg-white border-3 overflow-hidden ${cardStyle}`}
+                                >
+                                  {/* Selection Checkbox/Checkbox Marker */}
+                                  <div className="absolute top-3.5 right-3.5 z-10">
+                                    <span className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                                      isThisSelected 
+                                        ? 'bg-purple-600 border-2 border-white text-white scale-110 shadow-md' 
+                                        : 'bg-white border-2 border-slate-300 text-transparent'
+                                    }`}>
+                                      <svg className="w-3.5 h-3.5 stroke-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    </span>
+                                  </div>
 
-                              {!isTestMode && isAnswered && isCorrectOption && (
-                                <CheckCircle className="w-5 h-5 text-vibrant-green shrink-0" />
-                              )}
-                              {!isTestMode && isAnswered && isThisSelected && !isCorrectOption && (
-                                <XCircle className="w-5 h-5 text-vibrant-pink shrink-0" />
-                              )}
-                            </motion.button>
-                          );
-                        })}
-                      </div>
+                                  {/* Alphabet letter marker */}
+                                  <div className="absolute top-3.5 left-3.5 z-10 text-[9px] font-black text-slate-400 px-2 py-0.5 bg-slate-100 rounded-lg border border-slate-200 select-none">
+                                    {String.fromCharCode(65 + idx)}
+                                  </div>
+
+                                  {/* Image container */}
+                                  <div className="w-full h-full flex items-center justify-center py-2">
+                                    <img 
+                                      src={option} 
+                                      alt={`Đáp án ${String.fromCharCode(65 + idx)}`} 
+                                      className="max-h-full max-w-full object-contain drop-shadow-sm select-none"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  </div>
+                                </motion.button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Confirm button */}
+                          {!isTestMode && userAnswers[currentIndex] === undefined && (
+                            <div className="pt-2 text-right">
+                              <button
+                                type="button"
+                                disabled={selectedMultiOptions.length === 0}
+                                onClick={handleConfirmMultiChoice}
+                                className={`px-8 py-3.5 text-white font-black rounded-full shadow-lg hover:translate-y-0.5 active:translate-y-1 transition-all flex items-center gap-2 justify-center ml-auto cursor-pointer text-xs ${
+                                  selectedMultiOptions.length > 0
+                                    ? 'bg-emerald-500 hover:bg-emerald-600 shadow-[0_4px_0_#1E8449]'
+                                    : 'bg-slate-300 shadow-[0_4px_0_#CBD5E1] cursor-not-allowed opacity-60'
+                                }`}
+                              >
+                                🏁 Xác nhận câu trả lời 🏁
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        /* Traditional Multiple Choice Grid rendering */
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 gap-3">
+                            {quizQuestions[currentIndex]?.options.map((option, idx) => {
+                              const curQ = quizQuestions[currentIndex];
+                              const isMultiChoice = curQ?.type === 'multi_choice';
+                              const selectedOption = userAnswers[currentIndex];
+                              const isAnswered = isTestMode ? false : selectedOption !== undefined;
+                              
+                              const isThisSelected = isMultiChoice 
+                                ? selectedMultiOptions.includes(idx) 
+                                : selectedOption === idx;
+                              
+                              const isCorrectOption = isMultiChoice 
+                                ? (curQ.correctIndices || []).includes(idx) 
+                                : idx === curQ?.correctIndex;
+
+                              let optionStyle = "";
+                              if (isTestMode) {
+                                if (isThisSelected) {
+                                  optionStyle = "bg-indigo-50 border-2 border-indigo-500 font-bold shadow-[0_4px_0_#4F46E5] text-indigo-900";
+                                } else {
+                                  optionStyle = "bg-white border-2 border-slate-200 hover:border-vibrant-blue shadow-[0_4px_0_#E2E8F0] active:translate-y-0.5 text-slate-800";
+                                }
+                              } else {
+                                if (isAnswered) {
+                                  if (isCorrectOption) {
+                                    optionStyle = "bg-emerald-50 text-emerald-950 border-2 border-vibrant-green font-bold shadow-[0_4px_0_#2ECC71] text-emerald-900";
+                                  } else if (isThisSelected) {
+                                    optionStyle = "bg-rose-50 text-rose-950 border-2 border-vibrant-pink/80 font-bold shadow-[0_4px_0_#E74C3C] text-rose-955";
+                                  } else {
+                                    optionStyle = "bg-slate-50 text-slate-400 border border-slate-200/40 opacity-50 cursor-not-allowed";
+                                  }
+                                } else {
+                                  if (isThisSelected && isMultiChoice) {
+                                    optionStyle = "bg-purple-50 border-2 border-purple-500 font-bold shadow-[0_4px_0_#9333EA] text-purple-900";
+                                  } else {
+                                    optionStyle = "bg-white border-2 border-slate-200 hover:border-vibrant-blue shadow-[0_4px_0_#E2E8F0] active:translate-y-0.5 text-slate-800";
+                                  }
+                                }
+                              }
+
+                              return (
+                                <motion.button
+                                  key={idx}
+                                  type="button"
+                                  whileHover={!isAnswered ? { x: 4 } : {}}
+                                  whileTap={!isAnswered ? { scale: 0.99 } : {}}
+                                  disabled={isAnswered}
+                                  onClick={() => isMultiChoice ? handleToggleMultiOption(idx) : handleSelectOption(idx)}
+                                  className={`w-full text-left p-4 rounded-2xl font-semibold text-sm flex items-center justify-between transition-all cursor-pointer ${optionStyle}`}
+                                >
+                                  <div className="flex items-center gap-3 pr-2">
+                                    <span className={`w-8 h-8 rounded-lg ${isThisSelected ? (isMultiChoice ? 'bg-purple-100 border-purple-300' : 'bg-[#EEF2FF] border-indigo-200') : isAnswered ? 'bg-[#D1FAE5]' : 'bg-slate-100'} border text-xs font-black flex items-center justify-center shrink-0`}>
+                                      {isMultiChoice ? (
+                                        <input 
+                                          type="checkbox" 
+                                          checked={isThisSelected} 
+                                          readOnly 
+                                          className="w-3.5 h-3.5 text-purple-600 rounded border-slate-3 rounded-md"
+                                        />
+                                      ) : String.fromCharCode(65 + idx)}
+                                    </span>
+                                    <span className="leading-snug">{option}</span>
+                                  </div>
+
+                                  {!isTestMode && isAnswered && isCorrectOption && (
+                                    <CheckCircle className="w-5 h-5 text-vibrant-green shrink-0" />
+                                  )}
+                                  {!isTestMode && isAnswered && isThisSelected && !isCorrectOption && (
+                                    <XCircle className="w-5 h-5 text-vibrant-pink shrink-0" />
+                                  )}
+                                </motion.button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Confirm button for multi-choice in study mode */}
+                          {quizQuestions[currentIndex]?.type === 'multi_choice' && !isTestMode && userAnswers[currentIndex] === undefined && (
+                            <div className="pt-2 text-right">
+                              <button
+                                type="button"
+                                disabled={selectedMultiOptions.length === 0}
+                                onClick={handleConfirmMultiChoice}
+                                className={`px-8 py-3.5 text-white font-black rounded-full shadow-lg hover:translate-y-0.5 active:translate-y-1 transition-all flex items-center gap-2 justify-center ml-auto cursor-pointer text-xs ${
+                                  selectedMultiOptions.length > 0
+                                    ? 'bg-emerald-500 hover:bg-emerald-600 shadow-[0_4px_0_#1E8449]'
+                                    : 'bg-slate-300 shadow-[0_4px_0_#CBD5E1] cursor-not-allowed opacity-60'
+                                }`}
+                              >
+                                🏁 Xác nhận câu trả lời (Chọn nhiều) 🏁
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )
                     )}
 
                     {/* Response explanation box */}
@@ -2564,7 +2802,7 @@ export default function RevisionView({
                       {!isTestMode && userAnswers[currentIndex] !== undefined && (() => {
                         const q = quizQuestions[currentIndex];
                         const ansVal = userAnswers[currentIndex];
-                        const isCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text' || q.type === 'table_match') ? ansVal === 100 : ansVal === q.correctIndex;
+                        const isCorrect = (q.type === 'drag_text' || q.type === 'drag_image_text' || q.type === 'table_match' || q.type === 'multi_choice' || q.type === 'image_choice') ? ansVal === 100 : ansVal === q.correctIndex;
                         return (
                           <motion.div
                             initial={{ opacity: 0, scale: 0.95, y: 10 }}

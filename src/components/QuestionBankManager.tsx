@@ -34,9 +34,10 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
   
   // Temp form fields
   const [formText, setFormText] = useState('');
-  const [formType, setFormType] = useState<'choice' | 'drag_text' | 'drag_image_text' | 'table_match'>('choice');
+  const [formType, setFormType] = useState<'choice' | 'drag_text' | 'drag_image_text' | 'table_match' | 'multi_choice' | 'image_choice'>('choice');
   const [formExplanation, setFormExplanation] = useState('');
   const [formCorrectIndex, setFormCorrectIndex] = useState<number>(0);
+  const [formCorrectIndices, setFormCorrectIndices] = useState<number[]>([0]);
   const [formGrade, setFormGrade] = useState<number | ''>('');
 
   // Choice inputs
@@ -44,6 +45,9 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
   const [formOptionB, setFormOptionB] = useState('');
   const [formOptionC, setFormOptionC] = useState('');
   const [formOptionD, setFormOptionD] = useState('');
+
+  // Dynamic options list for multi_choice
+  const [formMultiOptions, setFormMultiOptions] = useState<string[]>(['', '', '', '']);
 
   // Drag Left items
   const [formLeftA, setFormLeftA] = useState('');
@@ -128,12 +132,50 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
     }
   };
 
+  const handleToggleCorrectIndex = (idx: number) => {
+    setFormCorrectIndices(prev => {
+      if (prev.includes(idx)) {
+        return prev.filter(i => i !== idx);
+      } else {
+        return [...prev, idx].sort((a, b) => a - b);
+      }
+    });
+  };
+
+  const handleDeleteMultiOption = (indexToDelete: number) => {
+    if (formMultiOptions.length <= 2) {
+      triggerAlert('Cần có ít nhất 2 phương án đáp án!', 'error');
+      return;
+    }
+    const updatedOptions = formMultiOptions.filter((_, idx) => idx !== indexToDelete);
+    setFormMultiOptions(updatedOptions);
+    
+    // adjust correct indices
+    setFormCorrectIndices(prev => {
+      const next: number[] = [];
+      prev.forEach(val => {
+        if (val < indexToDelete) {
+          next.push(val);
+        } else if (val > indexToDelete) {
+          next.push(val - 1);
+        }
+      });
+      return next.sort((a, b) => a - b);
+    });
+  };
+
+  const handleAddMultiOption = () => {
+    setFormMultiOptions([...formMultiOptions, '']);
+  };
+
   const handleStartAdd = () => {
     setEditingQuestion(null);
     setFormText('');
     setFormType('choice');
     setFormExplanation('');
     setFormCorrectIndex(0);
+    setFormCorrectIndices([0]);
+    setFormMultiOptions(['', '', '', '']);
     if (selectedGradeFilter !== 'all' && selectedGradeFilter !== 'unassigned') {
       setFormGrade(selectedGradeFilter);
     } else {
@@ -174,6 +216,8 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
     setFormType(q.type || 'choice');
     setFormExplanation(q.explanation || '');
     setFormCorrectIndex(q.correctIndex !== undefined ? q.correctIndex : 0);
+    setFormCorrectIndices(q.correctIndices || (q.correctIndex !== undefined ? [q.correctIndex] : [0]));
+    setFormMultiOptions(q.options || ['', '', '', '']);
     setFormGrade(q.grade || '');
 
     // Populate standard options list
@@ -241,9 +285,24 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
     }
 
     if (formType !== 'table_match') {
-      if (!formOptionA.trim() || !formOptionB.trim() || !formOptionC.trim() || !formOptionD.trim()) {
-        triggerAlert('Vui lòng điền đầy đủ cả 4 phương án câu trả lời!', 'error');
-        return;
+      if (formType !== 'multi_choice' && formType !== 'image_choice') {
+        if (!formOptionA.trim() || !formOptionB.trim() || !formOptionC.trim() || !formOptionD.trim()) {
+          triggerAlert('Vui lòng điền đầy đủ cả 4 phương án câu trả lời!', 'error');
+          return;
+        }
+      } else {
+        if (formMultiOptions.some(opt => !opt.trim())) {
+          triggerAlert(formType === 'image_choice' ? 'Vui lòng điền đầy đủ đường dẫn hình ảnh cho tất cả phương án!' : 'Vui lòng điền đầy đủ tất cả phương án câu trả lời!', 'error');
+          return;
+        }
+        if (formMultiOptions.length < 2) {
+          triggerAlert('Câu hỏi cần ít nhất 2 phương án đáp án!', 'error');
+          return;
+        }
+        if (formCorrectIndices.length === 0) {
+          triggerAlert('Vui lòng chọn ít nhất một đáp án đúng!', 'error');
+          return;
+        }
       }
     } else {
       if (formTableHeaders.length === 0 || formTableRows.length === 0) {
@@ -271,6 +330,11 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
     if (formType === 'choice') {
       questionPayload.options = [formOptionA.trim(), formOptionB.trim(), formOptionC.trim(), formOptionD.trim()];
       questionPayload.correctIndex = Number(formCorrectIndex);
+    } else if (formType === 'multi_choice' || formType === 'image_choice') {
+      questionPayload.options = formMultiOptions.map(opt => opt.trim());
+      questionPayload.correctIndices = formCorrectIndices.filter(idx => idx < formMultiOptions.length);
+      // Backup for any legacy system expecting single correctIndex
+      questionPayload.correctIndex = questionPayload.correctIndices.length > 0 ? questionPayload.correctIndices[0] : 0;
     } else if (formType === 'drag_text') {
       questionPayload.options = [formOptionA.trim(), formOptionB.trim(), formOptionC.trim(), formOptionD.trim()];
       questionPayload.leftTerms = [formLeftA.trim(), formLeftB.trim(), formLeftC.trim(), formLeftD.trim()];
@@ -316,6 +380,8 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
   const getTypeName = (t?: string) => {
     switch (t) {
       case 'choice': return 'Trắc nghiệm chọn 1 đáp án';
+      case 'multi_choice': return 'Trắc nghiệm chọn nhiều đáp án';
+      case 'image_choice': return 'Trắc nghiệm chọn hình ảnh';
       case 'drag_text': return 'Kéo thả chữ ghép cặp';
       case 'drag_image_text': return 'Kéo thả hình ghép cặp';
       case 'table_match': return 'Ghép lưới (Bảng nối cột)';
@@ -460,14 +526,18 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
                     onChange={e => setFormType(e.target.value as any)}
                     className="w-full px-4 py-2.5 bg-white border-2 border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-purple-500"
                   >
-                    <option value="choice">🔘 Trắc nghiệm chọn đáp án (Chọn 1 trong 4)</option>
-                    <option value="drag_text">🔀 Kéo thả khớp chữ (Trái chữ - Phải chữ)</option>
-                    <option value="drag_image_text">🖼️ Kéo thả khớp hình ảnh (Trái hình - Phải chữ)</option>
-                    <option value="table_match">📊 Ghép nối bảng (Tùy chỉnh hàng, cột & click trỏ chuột)</option>
+                    <option value="choice">🔘 Trắc nghiệm chọn đáp án</option>
+                    <option value="multi_choice">☑️ Trắc nghiệm chọn nhiều đáp án</option>
+                    <option value="image_choice">🖼️ Trắc nghiệm chọn hình ảnh</option>
+                    <option value="drag_text">🔀 Kéo thả khớp chữ</option>
+                    <option value="drag_image_text">🖼️ Kéo thả khớp hình ảnh</option>
+                    <option value="table_match">📊 Ghép nối bảng</option>
                   </select>
                 </div>
                 <div className="text-[11px] font-semibold text-slate-500 leading-relaxed bg-white p-3 rounded-xl border border-slate-200">
                   {formType === 'choice' && '✓ Học sinh sẽ được chọn một trong 4 phương án liệt kê bên dưới.'}
+                  {formType === 'multi_choice' && '✓ Học sinh có thể tích chọn một hoặc nhiều đáp án đúng tùy ý, sau đó nhấn nút xác nhận để kiểm tra kết quả.'}
+                  {formType === 'image_choice' && '✓ Các đáp án là hình ảnh (URL/Links). Học sinh sẽ tích chọn các hình ảnh đúng (hỗ trợ cả dạng chọn một hay chọn nhiều hình ảnh đúng).'}
                   {formType === 'drag_text' && '✓ Lướt kéo thả để ghép khớp cặp chữ cột bên trái với định nghĩa cột bên phải.'}
                   {formType === 'drag_image_text' && '✓ Học sinh sẽ thực hiện kéo thả các nhãn chữ khớp vào hình ảnh bên trái tương ứng.'}
                   {formType === 'table_match' && '✓ Bảng thông tin hỏi đáp đa chiều: Giáo viên có thể tự do thêm bớt cột, hàng, tùy chỉnh chữ và click để cấu hình đáp án đúng trực tếp.'}
@@ -582,6 +652,162 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
                     </div>
                   </div>
                   <span className="text-[10px] text-purple-700 font-bold block mt-1">💡 Hãy tích chọn chấm tròn ở đáp án chính xác nhất để hệ thống nhận diện.</span>
+                </div>
+              )}
+
+              {formType === 'multi_choice' && (
+                <div className="space-y-4 bg-purple-50/50 p-5 rounded-2xl border border-purple-100">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs font-black text-purple-900 block">Cấu hình các đáp án trắc nghiệm CHỌN NHIỀU ĐÁP ÁN:</span>
+                    <button
+                      type="button"
+                      onClick={handleAddMultiOption}
+                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-[11px] font-black flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Thêm đáp án
+                    </button>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {formMultiOptions.map((optionValue, idx) => (
+                      <div key={idx} className="space-y-1.5 bg-white p-3.5 rounded-xl border border-slate-100 shadow-xs relative group">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={formCorrectIndices.includes(idx)}
+                              onChange={() => handleToggleCorrectIndex(idx)}
+                              className="w-4 h-4 text-purple-600 rounded border-slate-300 focus:ring-purple-500 cursor-pointer"
+                            />
+                            <span className="w-5 h-5 bg-sky-100 text-sky-800 text-[9px] font-black rounded-lg flex items-center justify-center border border-sky-200">
+                              {String.fromCharCode(65 + idx)}
+                            </span>
+                            Phương án {String.fromCharCode(65 + idx)}:
+                          </label>
+                          
+                          {formMultiOptions.length > 2 && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMultiOption(idx)}
+                              className="text-slate-400 hover:text-red-500 p-1 rounded-lg hover:bg-red-50 transition-colors cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100"
+                              title="Xóa phương án này"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          required
+                          value={optionValue}
+                          onChange={e => {
+                            const updated = [...formMultiOptions];
+                            updated[idx] = e.target.value;
+                            setFormMultiOptions(updated);
+                          }}
+                          className="w-full px-3 py-2 bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 rounded-xl font-semibold text-xs focus:outline-none focus:border-purple-400 transition-colors"
+                          placeholder={`Nội dung phương án ${String.fromCharCode(65 + idx)}...`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pt-1">
+                    <span className="text-[10px] text-purple-700 font-bold block">💡 Hãy tích chọn các ô vuông ở những ĐÁP ÁN ĐÚNG (chọn được nhiều đáp án) để hệ thống nhận diện.</span>
+                    <button
+                      type="button"
+                      onClick={handleAddMultiOption}
+                      className="px-3.5 py-2 bg-white border-2 border-purple-200 hover:border-purple-300 hover:bg-purple-50 text-purple-700 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Tạo thêm đáp án mới
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {formType === 'image_choice' && (
+                <div className="space-y-4 bg-purple-50/50 p-5 rounded-2xl border border-purple-100">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs font-black text-purple-900 block">Cấu hình các đáp án trắc nghiệm CHỌN HÌNH ẢNH:</span>
+                    <button
+                      type="button"
+                      onClick={handleAddMultiOption}
+                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-[11px] font-black flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Thêm đáp án hình ảnh
+                    </button>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {formMultiOptions.map((optionValue, idx) => (
+                      <div key={idx} className="space-y-1.5 bg-white p-3.5 rounded-xl border border-slate-100 shadow-xs relative group">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-slate-500 flex items-center gap-1.5 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={formCorrectIndices.includes(idx)}
+                              onChange={() => handleToggleCorrectIndex(idx)}
+                              className="w-4 h-4 text-purple-600 rounded border-slate-300 focus:ring-purple-500 cursor-pointer"
+                            />
+                            <span className="w-5 h-5 bg-sky-100 text-sky-800 text-[9px] font-black rounded-lg flex items-center justify-center border border-sky-200">
+                              {String.fromCharCode(65 + idx)}
+                            </span>
+                            Đáp án đúng {String.fromCharCode(65 + idx)}
+                          </label>
+                          
+                          {formMultiOptions.length > 2 && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMultiOption(idx)}
+                              className="text-slate-400 hover:text-red-500 p-1 rounded-lg hover:bg-red-50 transition-colors cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100"
+                              title="Xóa phương án này"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          required
+                          value={optionValue}
+                          onChange={e => {
+                            const updated = [...formMultiOptions];
+                            updated[idx] = e.target.value;
+                            setFormMultiOptions(updated);
+                          }}
+                          className="w-full px-3 py-2 bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 rounded-xl font-semibold text-xs focus:outline-none focus:border-purple-400 transition-colors"
+                          placeholder="Ví dụ: /favicon.png hoặc đường dẫn ảnh..."
+                        />
+                        {/* URL Thumbnail Preview */}
+                        {optionValue.trim() && (
+                          <div className="mt-2 h-24 w-full bg-slate-50 rounded-lg flex items-center justify-center overflow-hidden border border-dashed border-slate-200 p-1">
+                            <img 
+                              src={optionValue.trim()} 
+                              alt={`Preview ${String.fromCharCode(65 + idx)}`} 
+                              className="h-full object-contain"
+                              referrerPolicy="no-referrer"
+                              onError={(e) => {
+                                // fallback onError silent
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pt-1">
+                    <span className="text-[10px] text-purple-700 font-bold block">💡 Hãy tích chọn vào ô của những HÌNH ẢNH ĐÚNG để học sinh kiểm tra đáp án.</span>
+                    <button
+                      type="button"
+                      onClick={handleAddMultiOption}
+                      className="px-3.5 py-2 bg-white border-2 border-purple-200 hover:border-purple-300 hover:bg-purple-50 text-purple-700 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Tạo thêm đáp án mới
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1051,7 +1277,7 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
                   {q.type !== 'table_match' ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-2">
                       {q.options && q.options.map((opt, oIdx) => {
-                        const isCorrect = oIdx === q.correctIndex;
+                        const isCorrect = (q.type === 'multi_choice' || q.type === 'image_choice') ? (q.correctIndices || []).includes(oIdx) : oIdx === q.correctIndex;
                         const leftConcept = q.type === 'drag_text' ? q.leftTerms?.[oIdx] : q.type === 'drag_image_text' ? q.leftImages?.[oIdx] : null;
 
                         return (
@@ -1072,7 +1298,23 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
                                   {leftConcept}
                                 </span>
                               )}
-                              <span className="line-clamp-2 pl-0.5 flex-1">{opt}</span>
+                              
+                              {q.type === 'image_choice' ? (
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  <img 
+                                    src={opt} 
+                                    alt="Preview" 
+                                    className="w-10 h-10 object-contain rounded-lg border bg-white shadow-xs shrink-0" 
+                                    referrerPolicy="no-referrer"
+                                    onError={(e) => {
+                                      (e.target as HTMLElement).style.display = 'none';
+                                    }}
+                                  />
+                                  <span className="text-[10px] font-semibold truncate flex-1 text-slate-400">{opt}</span>
+                                </div>
+                              ) : (
+                                <span className="line-clamp-2 pl-0.5 flex-1">{opt}</span>
+                              )}
                               {isCorrect && <CheckCircle className="w-3.5 h-3.5 text-emerald-600 ml-auto shrink-0" />}
                             </div>
                           </div>
