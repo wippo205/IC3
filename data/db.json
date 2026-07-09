@@ -2,22 +2,77 @@
   "users": {},
   "students": {},
   "teachers": {},
-  "progress": {
-    "student-nguy-n-an-6a1-thcs-l-qu-n": [
-      {
-        "userId": "student-nguy-n-an-6a1-thcs-l-qu-n",
-        "grade": 6,
-        "lessonId": "lesson_custom_1780132862451",
-        "completedQuestions": 3,
-        "correctAnswers": 1,
-        "totalQuestions": 3,
-        "isCompleted": true,
-        "lastUpdated": "2026-07-09T03:19:41.169Z"
-      }
-    ]
-  },
+  "progress": {},
+  "progressHomework": {},
   "exams": {},
   "files": {},
   "lessons": {},
+  "homeworks": [],
+  "questions": [
+    {
+      "createdAt": "2026-05-30T02:50:18.294Z",
+      "explanation": "Tính năng đánh dấu trang cho phép người dùng lưu lại địa chỉ của các trang web yêu thích hoặc cần thiết để có thể truy cập nhanh chóng trong những lần truy cập sau.",
+      "qNum": 1,
+      "options": [
+        "Hộp địa chỉ",
+        "Lịch sử hoặc dòng thời gian",
+        "Mục yêu thích hoặc dấu trang",
+        "Duyệt đa trang một lúc"
+      ],
+      "text": "Bạn cần lưu danh sách các trang web để có thể dễ dàng quay trở lại vào lần sau. Bạn nên sử dụng tính năng nào của trình duyệt web?",
+      "correctIndex": 2,
+      "id": "q_bank_1780109416318",
+      "grade": 6,
+      "type": "choice"
+    },
+    {
+      "correctIndex": 1,
+      "text": "Lịch sử duyệt web và các trang web được đánh dấu trang cung cấp cho hacker một bản  đồ của tất cả các trang web mà người dùng truy cập. Cùng với các trang web thường xuyên truy cập, hacker có thể sử dụng gì để truy cập",
+      "qNum": 2,
+      "options": [
+        "Cutouts",
+        "Cookies",
+        "Settings",
+        "History"
+      ],
+      "explanation": "Đây là lý giải kiến thức chuẩn.",
+      "createdAt": "2026-07-09T03:09:21.892Z",
+      "id": "q_bank_1783566559886",
+      "grade": 6,
+      "type": "choice"
+    },
+    {
+      "qNum": 3,
+      "options": [
+        "Đăng nhập máy tính và mật khẩu của bạn bị vô hiệu hóa",
+        "Tên của bạn được giữ kín",
+        "Không có lịch sử, cookie, mật khẩu hoặc tệp tạm thời nào được ghi lại trên máy tính",
+        "Không thể nhìn thấy các gói được gửi/ nhận qua mạng trường học của học"
+      ],
+      "explanation": "Đây là lý giải kiến thức chuẩn.",
+      "createdAt": "2026-07-09T03:12:57.146Z",
+      "text": "Một trong những giáo viên của bạn nói rằng bạn nên thay đổi cài đặt trình duyệt của mình để duyệt web ở chế độ riêng tư. Vậy lợi ích của việc duyệt web ở chế đô riêng tư là gì?",
+      "correctIndex": 2,
+      "id": "q_bank_1783566775598",
+      "grade": 6,
+      "type": "choice"
+    },
+    {
+      "createdAt": "2026-07-09T03:25:28.532Z",
+      "qNum": 4,
+      "options": [
+        "Mật khẩu không cần thay đổi",
+        "Lịch sử của người dùng không được lưu trữ",
+        "Có nhiều dung lượng lưu trữ hơn trên máy tính",
+        "Thông tin tài khoản được lưu"
+      ],
+      "explanation": "Đây là lý giải kiến thức chuẩn.",
+      "text": "Bạn hãy cho biết, duyệt web riêng tư đảm bảo điều gì sau đây?",
+      "correctIndex": 2,
+      "id": "q_bank_1783567526887",
+      "grade": 6,
+      "type": "choice"
+    }
+  ],
   "questionsInitialized": true
 }

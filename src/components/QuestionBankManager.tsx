@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Database, 
-  Plus, 
-  Trash2, 
-  Edit, 
-  X, 
-  Search, 
-  Save, 
-  HelpCircle, 
+import {
+  Database,
+  Plus,
+  Trash2,
+  Edit,
+  X,
+  Search,
+  Save,
+  HelpCircle,
   CheckCircle,
   Sparkles,
   Info
@@ -23,15 +23,15 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  
+
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGradeFilter, setSelectedGradeFilter] = useState<'all' | 3 | 4 | 5 | 6 | 7 | 8 | 'unassigned'>('all');
-  
+
   // Edit & Add Form states
   const [showEditor, setShowEditor] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<Partial<Question> | null>(null);
-  
+
   // Temp form fields
   const [formText, setFormText] = useState('');
   const [formType, setFormType] = useState<'choice' | 'drag_text' | 'drag_image_text' | 'table_match' | 'multi_choice' | 'image_choice'>('choice');
@@ -149,7 +149,7 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
     }
     const updatedOptions = formMultiOptions.filter((_, idx) => idx !== indexToDelete);
     setFormMultiOptions(updatedOptions);
-    
+
     // adjust correct indices
     setFormCorrectIndices(prev => {
       const next: number[] = [];
@@ -244,7 +244,7 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
     setFormTableCorrectAnswers(q.correctAnswers || [0, 0, 1]);
     setFormTableFontSize(q.tableFontSize || 'md');
     setFormTableWidth(q.tableWidth || 'normal');
-    
+
     setShowEditor(true);
   };
 
@@ -368,6 +368,12 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
         setShowEditor(false);
         setEditingQuestion(null);
         setErrorMsg(null);
+        // Tự động cuộn lên đầu trang sau khi tạo/sửa câu hỏi thành công
+        window.scrollTo({
+          top: 0,
+          behavior: 'smooth'
+        });
+
         triggerAlert('Đã lưu dữ liệu câu hỏi vào ngân hàng đề thành công!', 'success');
       } else {
         triggerAlert(data.error || 'Lỗi lưu câu hỏi.', 'error');
@@ -402,8 +408,8 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
         }
       }
     }
-    return (q.text || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-           ((q.explanation || '').toLowerCase().includes(searchQuery.toLowerCase()));
+    return (q.text || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ((q.explanation || '').toLowerCase().includes(searchQuery.toLowerCase()));
   });
 
   const gradeTabs: { value: 'all' | 3 | 4 | 5 | 6 | 7 | 8 | 'unassigned'; label: string; count: number }[] = [
@@ -426,11 +432,11 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
             Ngân Hàng Đề Thi & Câu Hỏi Trung Tâm 🗄️
           </h2>
           <p className="text-xs font-semibold text-slate-400 mt-0.5 max-w-2xl">
-            Tổng hợp toàn bộ các câu hỏi có sẵn trong hệ thống (từ Câu 1 đến câu {questions.length}). 
+            Tổng hợp toàn bộ các câu hỏi có sẵn trong hệ thống (từ Câu 1 đến câu {questions.length}).
             Khi bạn tạo hoặc chỉnh sửa đề ôn tập, các câu hỏi sẽ được liên kết trực tiếp từ Ngân hàng đề trung tâm này.
           </p>
         </div>
-        
+
         <button
           onClick={handleStartAdd}
           className="px-5 py-3 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs rounded-2xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs whitespace-nowrap"
@@ -459,16 +465,14 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
               <button
                 key={tab.value.toString()}
                 onClick={() => setSelectedGradeFilter(tab.value)}
-                className={`px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border-2 ${
-                  isActive
+                className={`px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border-2 ${isActive
                     ? 'bg-purple-600 border-purple-600 text-white shadow-xs'
                     : 'bg-white hover:bg-slate-50 border-slate-205 text-slate-600'
-                }`}
+                  }`}
               >
                 <span>{tab.label}</span>
-                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                  isActive ? 'bg-purple-800 text-white' : 'bg-slate-100 text-slate-500'
-                }`}>
+                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${isActive ? 'bg-purple-800 text-white' : 'bg-slate-100 text-slate-500'
+                  }`}>
                   {tab.count}
                 </span>
               </button>
@@ -481,8 +485,8 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
       <div className="grid grid-cols-1 md:grid-cols-12 gap-3 bg-slate-50 p-3.5 rounded-[2rem] border-2 border-slate-100">
         <div className="md:col-span-10 relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-4 top-3.5" />
-          <input 
-            type="text" 
+          <input
+            type="text"
             placeholder="Tìm kiếm câu hỏi hay đáp án..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
@@ -498,7 +502,7 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
       {/* MODAL EDITOR FORM */}
       {showEditor && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[999] overflow-y-auto">
-          <motion.div 
+          <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             className="bg-white rounded-[2.5rem] border-4 border-purple-650 max-w-2xl w-full p-6 md:p-8 shadow-2xl space-y-6 text-left max-h-[90vh] overflow-y-auto scrollbar-none"
@@ -508,7 +512,7 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
                 <Database className="w-5 h-5 text-purple-600" />
                 {editingQuestion ? `Chỉnh sửa Câu Hỏi số ${editingQuestion.qNum}` : 'Thêm Câu Hỏi Mới vào Ngân Hàng'}
               </h3>
-              <button 
+              <button
                 onClick={() => { setShowEditor(false); setEditingQuestion(null); }}
                 className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-700 rounded-full cursor-pointer"
               >
@@ -561,7 +565,7 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
               {formType === 'choice' && (
                 <div className="space-y-4 bg-purple-50/50 p-5 rounded-2xl border border-purple-100">
                   <span className="text-xs font-black text-purple-900 block mb-1">Cấu hình các đáp án trắc nghiệm:</span>
-                  
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <label className="text-xs font-bold text-slate-500 block flex items-center gap-1.5">
@@ -668,7 +672,7 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
                       Thêm đáp án
                     </button>
                   </div>
-                  
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {formMultiOptions.map((optionValue, idx) => (
                       <div key={idx} className="space-y-1.5 bg-white p-3.5 rounded-xl border border-slate-100 shadow-xs relative group">
@@ -685,7 +689,7 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
                             </span>
                             Phương án {String.fromCharCode(65 + idx)}:
                           </label>
-                          
+
                           {formMultiOptions.length > 2 && (
                             <button
                               type="button"
@@ -739,7 +743,7 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
                       Thêm đáp án hình ảnh
                     </button>
                   </div>
-                  
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {formMultiOptions.map((optionValue, idx) => (
                       <div key={idx} className="space-y-1.5 bg-white p-3.5 rounded-xl border border-slate-100 shadow-xs relative group">
@@ -756,7 +760,7 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
                             </span>
                             Đáp án đúng {String.fromCharCode(65 + idx)}
                           </label>
-                          
+
                           {formMultiOptions.length > 2 && (
                             <button
                               type="button"
@@ -783,9 +787,9 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
                         {/* URL Thumbnail Preview */}
                         {optionValue.trim() && (
                           <div className="mt-2 h-24 w-full bg-slate-50 rounded-lg flex items-center justify-center overflow-hidden border border-dashed border-slate-200 p-1">
-                            <img 
-                              src={optionValue.trim()} 
-                              alt={`Preview ${String.fromCharCode(65 + idx)}`} 
+                            <img
+                              src={optionValue.trim()}
+                              alt={`Preview ${String.fromCharCode(65 + idx)}`}
                               className="h-full object-contain"
                               referrerPolicy="no-referrer"
                               onError={(e) => {
@@ -815,7 +819,7 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
                 <div className="space-y-4 bg-purple-50/50 p-5 rounded-2xl border border-purple-100">
                   <span className="text-xs font-black text-purple-900 block">Cấu hình Kéo thả Khớp các Cặp Chữ:</span>
                   <p className="text-[10px] font-bold text-slate-400 italic">Thực hiện ghép vế Trái khớp với định nghĩa vế Phải tương ứng. Hệ thống sẽ tự đảo ngẫu nhiên khi hiển thị.</p>
-                  
+
                   <div className="grid grid-cols-2 gap-3 pb-1 border-b border-dashed border-slate-200">
                     <span className="text-[11px] font-black text-purple-800">Từ Khóa Vế Trái (Cố định)</span>
                     <span className="text-[11px] font-black text-blue-800">Nhãn Khớp Vế Phải (Kéo thả)</span>
@@ -905,7 +909,7 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
                 <div className="space-y-4 bg-purple-50/50 p-5 rounded-2xl border border-purple-100">
                   <span className="text-xs font-black text-purple-900 block">Cấu hình Kéo thả Khớp Ảnh - Chữ:</span>
                   <p className="text-[10px] font-bold text-slate-400 italic">Nhập đường dẫn hình ảnh cột vế Trái khớp với đáp án chữ vế Phải tương ứng.</p>
-                  
+
                   <div className="grid grid-cols-2 gap-3 pb-1 border-b border-dashed border-slate-200">
                     <span className="text-[11px] font-black text-purple-800">Đường dẫn ảnh Trái (Link URL)</span>
                     <span className="text-[11px] font-black text-blue-800">Nhãn Khớp Chữ Phải</span>
@@ -994,7 +998,7 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
               {formType === 'table_match' && (
                 <div className="space-y-4 bg-purple-50/50 p-5 rounded-2xl border border-purple-100">
                   <span className="text-xs font-black text-purple-900 block">Cấu hình Bảng nối cột (Lưới khớp ô):</span>
-                  
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-3.5 rounded-2xl border border-slate-150">
                     <div className="space-y-1">
                       <label className="text-[11px] font-black text-slate-700">Cỡ chữ trong bảng:</label>
@@ -1137,9 +1141,8 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
                                       }}
                                       className="inline-flex items-center justify-center w-6 h-6 rounded-full border border-slate-250 hover:border-purple-400 hover:bg-purple-50 cursor-pointer transition-all mx-auto focus:outline-none"
                                     >
-                                      <div className={`w-3.5 h-3.5 rounded-full transition-all flex items-center justify-center ${
-                                        isChecked ? 'bg-purple-600 scale-110' : 'bg-transparent border border-slate-300'
-                                      }`}>
+                                      <div className={`w-3.5 h-3.5 rounded-full transition-all flex items-center justify-center ${isChecked ? 'bg-purple-600 scale-110' : 'bg-transparent border border-slate-300'
+                                        }`}>
                                         {isChecked && <div className="w-1 h-1 bg-white rounded-full" />}
                                       </div>
                                     </button>
@@ -1281,13 +1284,12 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
                         const leftConcept = q.type === 'drag_text' ? q.leftTerms?.[oIdx] : q.type === 'drag_image_text' ? q.leftImages?.[oIdx] : null;
 
                         return (
-                          <div 
-                            key={oIdx} 
-                            className={`text-[11px] font-bold p-2.5 rounded-xl border flex flex-col gap-1.5 ${
-                              isCorrect 
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 shadow-inner' 
+                          <div
+                            key={oIdx}
+                            className={`text-[11px] font-bold p-2.5 rounded-xl border flex flex-col gap-1.5 ${isCorrect
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 shadow-inner'
                                 : 'bg-slate-50 text-slate-500 border-slate-100'
-                            }`}
+                              }`}
                           >
                             <div className="flex items-center gap-2">
                               <span className="font-semibold text-[9px] px-1.5 py-0.5 rounded-md bg-stone-100 border border-stone-200 select-none">
@@ -1298,13 +1300,13 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
                                   {leftConcept}
                                 </span>
                               )}
-                              
+
                               {q.type === 'image_choice' ? (
                                 <div className="flex items-center gap-2 flex-1 min-w-0">
-                                  <img 
-                                    src={opt} 
-                                    alt="Preview" 
-                                    className="w-10 h-10 object-contain rounded-lg border bg-white shadow-xs shrink-0" 
+                                  <img
+                                    src={opt}
+                                    alt="Preview"
+                                    className="w-10 h-10 object-contain rounded-lg border bg-white shadow-xs shrink-0"
                                     referrerPolicy="no-referrer"
                                     onError={(e) => {
                                       (e.target as HTMLElement).style.display = 'none';
@@ -1410,13 +1412,12 @@ export default function QuestionBankManager({ token }: QuestionBankManagerProps)
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 20, opacity: 0 }}
-            className={`fixed bottom-6 right-6 z-[9999] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-white font-bold text-xs border border-white/20 ${
-              customAlert.type === 'success'
+            className={`fixed bottom-6 right-6 z-[9999] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-white font-bold text-xs border border-white/20 ${customAlert.type === 'success'
                 ? 'bg-emerald-600 shadow-emerald-500/20'
                 : customAlert.type === 'error'
                   ? 'bg-rose-600 shadow-rose-500/20'
                   : 'bg-purple-600 shadow-purple-500/20'
-            }`}
+              }`}
           >
             <span>{customAlert.type === 'success' ? '✓' : 'ℹ'}</span>
             <span>{customAlert.message}</span>

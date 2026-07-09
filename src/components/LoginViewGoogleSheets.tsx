@@ -293,7 +293,7 @@ export default function LoginViewGoogleSheets({ onSuccess, initialError, onClear
       >
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4">
             <label className="block">
               <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
                 <School className="h-4 w-4" /> Trường
