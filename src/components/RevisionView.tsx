@@ -937,6 +937,15 @@ console.log("DURATION SEND:", durationSeconds);
       () => {
         handleShuffleQuestions();
         setUserAnswers({});
+        setTestMatchingAnswers({});
+        setTestAvailableCards({});
+        setTableAnswers({});
+        setMatchingSlots({ 0: null, 1: null, 2: null, 3: null });
+        setAvailableCards([]);
+        setSelectedCardToPlace(null);
+        setIsMatchingCorrect(null);
+        setSelectedMultiOptions([]);
+        setIsMultiConfirmed(false);
         setCurrentIndex(0);
         setShowFinishedCard(false);
         saveProgressToServer(selectedLessonId!, 0, 0, quizQuestions.length, false);
@@ -2457,6 +2466,7 @@ console.log("DURATION SEND:", durationSeconds);
                                             alt="" 
                                             className="w-12 h-12 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-lg object-contain select-none transition-all shadow-xs" 
                                             referrerPolicy="no-referrer" 
+                                            draggable={false}
                                           />
                                         ) : (
                                           <div className="w-12 h-12 sm:w-20 sm:h-20 md:w-24 md:h-24 bg-slate-100 rounded-lg flex items-center justify-center border text-[9px] sm:text-[11px] text-slate-400 font-bold shrink-0">Không có ảnh</div>
@@ -2713,6 +2723,7 @@ console.log("DURATION SEND:", durationSeconds);
                                       alt={`Đáp án ${String.fromCharCode(65 + idx)}`} 
                                       className="max-h-full max-w-full object-contain drop-shadow-sm select-none"
                                       referrerPolicy="no-referrer"
+                                      draggable={false}
                                     />
                                   </div>
                                 </motion.button>
@@ -2984,6 +2995,15 @@ console.log("DURATION SEND:", durationSeconds);
                     onClick={() => {
                       handleShuffleQuestions();
                       setUserAnswers({});
+                      setTestMatchingAnswers({});
+                      setTestAvailableCards({});
+                      setTableAnswers({});
+                      setMatchingSlots({ 0: null, 1: null, 2: null, 3: null });
+                      setAvailableCards([]);
+                      setSelectedCardToPlace(null);
+                      setIsMatchingCorrect(null);
+                      setSelectedMultiOptions([]);
+                      setIsMultiConfirmed(false);
                       setCurrentIndex(0);
                       setShowFinishedCard(false);
                     }}

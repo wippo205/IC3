@@ -43,6 +43,176 @@ export default function ExamView({ grade,lessonId, token, onBackToDashboard, onE
   const [correctCount, setCorrectCount] = useState(0);
   const [savingRecord, setSavingRecord] = useState(false);
 
+  // New States for different question types:
+  const [tableAnswers, setTableAnswers] = useState<Record<number, Record<number, number>>>({});
+  const [matchingSlots, setMatchingSlots] = useState<Record<number, string | null>>({ 0: null, 1: null, 2: null, 3: null });
+  const [availableCards, setAvailableCards] = useState<string[]>([]);
+  const [selectedCardToPlace, setSelectedCardToPlace] = useState<string | null>(null);
+  const [testMatchingAnswers, setTestMatchingAnswers] = useState<Record<number, Record<number, string | null>>>({});
+  const [testAvailableCards, setTestAvailableCards] = useState<Record<number, string[]>>({});
+  const [selectedMultiOptions, setSelectedMultiOptions] = useState<number[]>([]);
+  const [examMultiAnswers, setExamMultiAnswers] = useState<Record<number, number[]>>({});
+
+  // Drag indicators
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOverSlot, setDragOverSlot] = useState<number | null>(null);
+  const [isDraggingOverAvailable, setIsDraggingOverAvailable] = useState(false);
+
+  // Helper functions
+  const areArraysEqual = (arr1: number[], arr2: number[]) => {
+    if (arr1.length !== arr2.length) return false;
+    const s1 = [...arr1].sort((a, b) => a - b);
+    const s2 = [...arr2].sort((a, b) => a - b);
+    return s1.every((val, index) => val === s2[index]);
+  };
+
+  const handleToggleMultiOption = (optionIndex: number) => {
+    if (isSubmitted) return;
+
+    let nextSelected: number[] = [];
+    if (selectedMultiOptions.includes(optionIndex)) {
+      nextSelected = selectedMultiOptions.filter(idx => idx !== optionIndex);
+    } else {
+      nextSelected = [...selectedMultiOptions, optionIndex].sort((a, b) => a - b);
+    }
+    setSelectedMultiOptions(nextSelected);
+
+    // Save to cache
+    setExamMultiAnswers(prev => ({ ...prev, [currentIndex]: nextSelected }));
+
+    // Silently evaluate correctness and save to userAnswers
+    const q = questions[currentIndex];
+    if (q) {
+      if (nextSelected.length > 0) {
+        const isCorrect = areArraysEqual(nextSelected, q.correctIndices || []);
+        setUserAnswers(prev => ({ ...prev, [currentIndex]: isCorrect ? 100 : 200 }));
+      } else {
+        setUserAnswers(prev => {
+          const copy = { ...prev };
+          delete copy[currentIndex];
+          return copy;
+        });
+      }
+    }
+  };
+
+  const handlePlaceCardInSlot = (cardText: string, slotIndex: number) => {
+    if (isSubmitted) return;
+    const q = questions[currentIndex];
+    if (!q) return;
+
+    const currentSlotCard = matchingSlots[slotIndex];
+
+    // Remove cardText from any other slot first
+    const updatedSlots = { ...matchingSlots };
+    Object.keys(updatedSlots).forEach((k) => {
+      const idx = Number(k);
+      if (updatedSlots[idx] === cardText) {
+        updatedSlots[idx] = null;
+      }
+    });
+
+    updatedSlots[slotIndex] = cardText;
+    setMatchingSlots(updatedSlots);
+
+    let nextAvailable = availableCards.filter(c => c !== cardText);
+    if (currentSlotCard) {
+      nextAvailable.push(currentSlotCard);
+    }
+    setAvailableCards(nextAvailable);
+    setSelectedCardToPlace(null);
+  };
+
+  const handleRemoveCardFromSlot = (slotIndex: number) => {
+    if (isSubmitted) return;
+    const currentSlotCard = matchingSlots[slotIndex];
+    if (!currentSlotCard) return;
+
+    const updatedSlots = { ...matchingSlots, [slotIndex]: null };
+    setMatchingSlots(updatedSlots);
+    setAvailableCards(prev => [...prev, currentSlotCard]);
+  };
+
+  const handleSelectTableCell = (rowIdx: number, colIdx: number) => {
+    if (isSubmitted) return;
+    const q = questions[currentIndex];
+    if (!q) return;
+
+    const selections = tableAnswers[currentIndex] || {};
+    const nextSelections = { ...selections, [rowIdx]: colIdx };
+    setTableAnswers(prev => ({
+      ...prev,
+      [currentIndex]: nextSelections
+    }));
+
+    // Evaluate silently if all rows are answered
+    const rowsCount = q.rows?.length || 0;
+    const filledCount = Object.keys(nextSelections).length;
+    if (filledCount === rowsCount) {
+      let isAllCorrect = true;
+      for (let rIdx = 0; rIdx < rowsCount; rIdx++) {
+        if (nextSelections[rIdx] !== q.correctAnswers?.[rIdx]) {
+          isAllCorrect = false;
+          break;
+        }
+      }
+      setUserAnswers(prev => ({ ...prev, [currentIndex]: isAllCorrect ? 100 : 200 }));
+    } else {
+      setUserAnswers(prev => {
+        const copy = { ...prev };
+        delete copy[currentIndex];
+        return copy;
+      });
+    }
+  };
+
+  // Set up matching question cards or multi-choice when current question index changes
+  useEffect(() => {
+    const q = questions[currentIndex];
+    if (q) {
+      if (q.type === 'drag_text' || q.type === 'drag_image_text') {
+        if (testMatchingAnswers[currentIndex]) {
+          setMatchingSlots(testMatchingAnswers[currentIndex]);
+          setAvailableCards(testAvailableCards[currentIndex] || []);
+        } else {
+          setMatchingSlots({ 0: null, 1: null, 2: null, 3: null });
+          const shuffled = [...(q.options || [])].sort(() => 0.5 - Math.random());
+          setAvailableCards(shuffled);
+        }
+        setSelectedCardToPlace(null);
+      } else if (q.type === 'multi_choice' || q.type === 'image_choice') {
+        setSelectedMultiOptions(examMultiAnswers[currentIndex] || []);
+      }
+    }
+  }, [currentIndex, questions]);
+
+  // Synchronize matching answers and available cards to cache and silently evaluate answered status
+  useEffect(() => {
+    const q = questions[currentIndex];
+    if (q && (q.type === 'drag_text' || q.type === 'drag_image_text')) {
+      setTestMatchingAnswers(prev => ({ ...prev, [currentIndex]: matchingSlots }));
+      setTestAvailableCards(prev => ({ ...prev, [currentIndex]: availableCards }));
+
+      // Silently evaluate correctness
+      const isCorrect0 = matchingSlots[0] === q.options[0];
+      const isCorrect1 = matchingSlots[1] === q.options[1];
+      const isCorrect2 = matchingSlots[2] === q.options[2];
+      const isCorrect3 = matchingSlots[3] === q.options[3];
+      const fullyCorrect = isCorrect0 && isCorrect1 && isCorrect2 && isCorrect3;
+
+      const filledCount = Object.values(matchingSlots).filter(v => v !== null).length;
+      if (filledCount === 4) {
+        setUserAnswers(prev => ({ ...prev, [currentIndex]: fullyCorrect ? 100 : 200 }));
+      } else {
+        setUserAnswers(prev => {
+          const next = { ...prev };
+          delete next[currentIndex];
+          return next;
+        });
+      }
+    }
+  }, [matchingSlots, availableCards, currentIndex, questions]);
+
   // Timer reference
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -150,6 +320,14 @@ export default function ExamView({ grade,lessonId, token, onBackToDashboard, onE
 
     setQuestions(finalizedQuestions);
     setUserAnswers({});
+    setTableAnswers({});
+    setMatchingSlots({ 0: null, 1: null, 2: null, 3: null });
+    setAvailableCards([]);
+    setSelectedCardToPlace(null);
+    setTestMatchingAnswers({});
+    setTestAvailableCards({});
+    setSelectedMultiOptions([]);
+    setExamMultiAnswers({});
     setCurrentIndex(0);
     setTimeLeft(config.timeMins * 60);
     setIsSubmitted(false);
@@ -204,7 +382,11 @@ export default function ExamView({ grade,lessonId, token, onBackToDashboard, onE
     // Tabulate score
     let corrects = 0;
     questions.forEach((q, idx) => {
-      if (userAnswers[idx] === q.correctIndex) {
+      const ansVal = userAnswers[idx];
+      const isCorrect = (q.type && q.type !== 'choice') 
+        ? ansVal === 100 
+        : ansVal === q.correctIndex;
+      if (isCorrect) {
         corrects++;
       }
     });
@@ -382,32 +564,414 @@ export default function ExamView({ grade,lessonId, token, onBackToDashboard, onE
               </h3>
             </div>
 
-            {/* Options list */}
-            <div className="grid grid-cols-1 gap-3">
-              {currentQuestion?.options.map((option, idx) => {
-                const isSelected = selectedOption === idx;
+            {/* Dynamic interactive question content based on type */}
+            {currentQuestion?.type === 'table_match' ? (
+              /* Table matching matrix rendering */
+              (() => {
+                const q = currentQuestion;
+                if (!q) return null;
+                
+                const selections = tableAnswers[currentIndex] || {};
+                const rowsCount = q.rows?.length || 0;
+                
+                const sizeFontHeaders = q.tableFontSize === 'sm' ? 'text-[11px]' : q.tableFontSize === 'lg' ? 'text-[14px]' : 'text-xs md:text-sm';
+                const sizeFontCells = q.tableFontSize === 'sm' ? 'text-[10px]' : q.tableFontSize === 'lg' ? 'text-[13px]' : 'text-xs';
+                
+                const widthClass = q.tableWidth === 'compact' ? 'max-w-md mx-auto' : q.tableWidth === 'wide' ? 'w-full' : 'max-w-2xl mx-auto';
+                
                 return (
-                  <button
-                    key={idx}
-                    onClick={() => handleSelectOption(idx)}
-                    className={`w-full text-left p-4 rounded-2xl font-semibold text-sm flex items-center justify-between transition-all cursor-pointer ${
-                      isSelected 
-                        ? 'bg-orange-50 border-4 border-vibrant-blue text-vibrant-blue shadow-xs'
-                        : 'bg-white border-2 border-slate-200 hover:border-vibrant-blue hover:text-vibrant-blue text-slate-800'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className={`w-8 h-8 rounded-lg text-xs font-black flex items-center justify-center shrink-0 ${
-                        isSelected ? 'bg-vibrant-blue text-white border-2 border-orange-100 shadow-xs' : 'bg-slate-100'
-                      }`}>
-                        {String.fromCharCode(65 + idx)}
+                  <div className={`space-y-6 ${widthClass}`}>
+                    <div className="bg-white border-4 border-slate-100 p-4 md:p-6 rounded-[2rem] shadow-md overflow-hidden">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-3 text-center">
+                        📊 Click / Tap vào các ô để khớp thông tin tương ứng:
                       </span>
-                      <span>{option}</span>
+                      
+                      <div className="overflow-x-auto rounded-2xl border border-slate-150 shadow-xs">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200">
+                              <th className={`p-3 font-extrabold text-slate-600 ${sizeFontHeaders} w-[40%] bg-slate-50`}>
+                                Danh mục hỏi
+                              </th>
+                              {(q.headers || []).map((header, colIdx) => (
+                                <th 
+                                  key={colIdx} 
+                                  className={`p-3 font-black text-slate-800 border-l border-slate-100/80 text-center uppercase tracking-wider ${sizeFontHeaders}`}
+                                >
+                                  {header}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(q.rows || []).map((rowText, rowIdx) => {
+                              const rowChosenCol = selections[rowIdx];
+                              
+                              return (
+                                <tr key={rowIdx} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/20">
+                                  {/* Row label */}
+                                  <td className={`p-3 font-extrabold text-slate-700 leading-snug ${sizeFontCells} bg-slate-50/25`}>
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-5 h-5 rounded-md bg-sky-50 text-sky-700 text-[10px] font-black flex items-center justify-center border">
+                                        {rowIdx + 1}
+                                      </span>
+                                      <span>{rowText}</span>
+                                    </div>
+                                  </td>
+
+                                  {/* Options checkboxes */}
+                                  {(q.headers || []).map((_, colIdx) => {
+                                    const isSelected = rowChosenCol === colIdx;
+                                    
+                                    let cellBg = "bg-white hover:bg-slate-50 cursor-pointer";
+                                    let radioDotStyle = "border-slate-300";
+                                    
+                                    if (isSelected) {
+                                      cellBg = "bg-indigo-50 border border-indigo-400 text-indigo-950 font-black shadow-inner scale-[1.01]";
+                                      radioDotStyle = "bg-indigo-600 border-indigo-600 scale-110 shadow-xs";
+                                    }
+                                    
+                                    return (
+                                      <td 
+                                        key={colIdx} 
+                                        onClick={() => handleSelectTableCell(rowIdx, colIdx)}
+                                        className={`p-3 text-center border-l border-slate-100 transition-all select-none ${cellBg}`}
+                                      >
+                                        <div className="flex flex-col items-center justify-center gap-1">
+                                          <div className={`w-5 h-5 rounded-full border transition-all flex items-center justify-center ${radioDotStyle}`}>
+                                            {isSelected && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                          </div>
+                                        </div>
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                  </button>
+
+                    {/* Completed Status In Exam Mode */}
+                    {Object.keys(selections).length === rowsCount && (
+                      <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-2xl text-[11px] text-emerald-800 font-bold text-center">
+                        ✓ Đã ghi nhận đầy đủ đáp án trong bảng cho câu hỏi này!
+                      </div>
+                    )}
+                  </div>
                 );
-              })}
-            </div>
+              })()
+            ) : currentQuestion?.type === 'drag_text' || currentQuestion?.type === 'drag_image_text' ? (
+              /* Matching dragging board */
+              <div className="space-y-6">
+                <div className="bg-slate-50 border-2 border-slate-200/60 p-5 rounded-[2.5rem] space-y-4">
+                  <span className="text-xs font-black text-slate-500 uppercase block mb-1">
+                    Lắp ghép các cặp tương ứng song song:
+                  </span>
+                  
+                  <div className="grid grid-cols-1 gap-4">
+                    {[0, 1, 2, 3].map((slotIdx) => {
+                      const leftTermVal = currentQuestion?.leftTerms?.[slotIdx] || `Cột Trái ${slotIdx + 1}`;
+                      const leftImgVal = currentQuestion?.leftImages?.[slotIdx] || '';
+                      const placedCard = matchingSlots[slotIdx];
+                      
+                      return (
+                        <div 
+                          key={slotIdx} 
+                          className="flex flex-row gap-2 sm:gap-4 items-center justify-between bg-white p-2.5 sm:p-3.5 rounded-2xl border border-slate-200 shadow-xs w-full"
+                        >
+                          {/* Left Item */}
+                          <div className="w-[45%] flex items-center gap-2 sm:gap-4 bg-slate-50 p-2 sm:p-3 rounded-xl border border-slate-100 shrink-0 select-none">
+                            <span className="w-5 h-5 sm:w-7 h-7 rounded-full bg-amber-500 text-white text-[10px] sm:text-xs font-black flex items-center justify-center border shrink-0">
+                              {String.fromCharCode(65 + slotIdx)}
+                            </span>
+                            {currentQuestion?.type === 'drag_image_text' ? (
+                              <div className="flex items-center justify-center bg-white p-0.5 sm:p-1 rounded-lg sm:rounded-xl border border-slate-150 shrink-0">
+                                {leftImgVal ? (
+                                  <img 
+                                    src={leftImgVal} 
+                                    alt="" 
+                                    className="w-12 h-12 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-lg object-contain select-none transition-all shadow-xs" 
+                                    referrerPolicy="no-referrer" 
+                                    draggable={false}
+                                  />
+                                ) : (
+                                  <div className="w-12 h-12 sm:w-20 sm:h-20 md:w-24 md:h-24 bg-slate-100 rounded-lg flex items-center justify-center border text-[9px] sm:text-[11px] text-slate-400 font-bold shrink-0">Không có ảnh</div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[11px] sm:text-xs font-black text-amber-900 leading-relaxed truncate">{leftTermVal}</span>
+                            )}
+                          </div>
+                          
+                          {/* Arrow indicator */}
+                          <div className="flex flex-col items-center justify-center shrink-0">
+                            <span className="text-sm sm:text-lg font-black text-slate-300">➔</span>
+                          </div>
+                          
+                          {/* Drop Target Card Placement slot */}
+                          <div 
+                            onDragOver={(e) => { 
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = "move";
+                              if (dragOverSlot !== slotIdx) {
+                                setDragOverSlot(slotIdx);
+                              }
+                            }}
+                            onDragLeave={() => {
+                              if (dragOverSlot === slotIdx) {
+                                setDragOverSlot(null);
+                              }
+                            }}
+                            onDrop={(e) => { 
+                              setDragOverSlot(null);
+                              const cardText = e.dataTransfer.getData("text") || e.dataTransfer.getData("text/plain");
+                              if (cardText) {
+                                handlePlaceCardInSlot(cardText, slotIdx);
+                              }
+                            }}
+                            onClick={() => {
+                              if (selectedCardToPlace) {
+                                handlePlaceCardInSlot(selectedCardToPlace, slotIdx);
+                              } else if (placedCard) {
+                                handleRemoveCardFromSlot(slotIdx);
+                              }
+                            }}
+                            className={`flex-1 p-2 sm:p-3 min-h-[44px] sm:min-h-[56px] rounded-xl border-2 border-dashed flex items-center justify-between transition-all select-none gap-1.5 sm:gap-2 relative ${
+                              placedCard 
+                                ? 'bg-indigo-50/50 border-indigo-400 text-indigo-900 font-bold cursor-grab active:cursor-grabbing hover:bg-slate-50' 
+                                : dragOverSlot === slotIdx
+                                  ? 'border-amber-500 bg-amber-100/50 scale-[1.02] ring-2 ring-amber-300'
+                                  : selectedCardToPlace 
+                                    ? 'border-amber-400 bg-amber-50/30 cursor-pointer animate-pulse'
+                                    : 'border-slate-250 bg-slate-50 text-slate-400 text-[10px] sm:text-xs italic'
+                            }`}
+                          >
+                            <div 
+                              draggable={placedCard ? true : false}
+                              onDragStart={(e) => {
+                                if (placedCard) {
+                                  e.dataTransfer.setData("text", placedCard);
+                                  e.dataTransfer.setData("text/plain", placedCard);
+                                  e.dataTransfer.setData("originSlot", String(slotIdx));
+                                  setIsDragging(true);
+                                }
+                              }}
+                              onDragEnd={() => setIsDragging(false)}
+                              className={`flex items-center gap-1.5 sm:gap-2 w-full ${placedCard ? 'cursor-grab active:cursor-grabbing' : 'pointer-events-none'}`}
+                            >
+                              {placedCard ? (
+                                <span className="text-[11px] sm:text-xs font-bold leading-snug">☰ {placedCard}</span>
+                              ) : (
+                                <span className="text-[9px] sm:text-[11px] font-bold text-slate-400 leading-tight">
+                                  {selectedCardToPlace ? '👇 Chạm ráp' : 'Kéo thả hoặc chạm nhãn...'}
+                                </span>
+                              )}
+                            </div>
+                            
+                            {placedCard && (
+                              <button 
+                                type="button" 
+                                onClick={(e) => { e.stopPropagation(); handleRemoveCardFromSlot(slotIdx); }}
+                                className="text-slate-400 hover:text-red-500 font-bold text-sm cursor-pointer p-1 shrink-0"
+                                title="Gỡ nhãn này"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Available source card nodes list */}
+                <div 
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDraggingOverAvailable(true);
+                  }}
+                  onDragLeave={() => {
+                    setIsDraggingOverAvailable(false);
+                  }}
+                  onDrop={(e) => {
+                    setIsDraggingOverAvailable(false);
+                    const originSlotStr = e.dataTransfer.getData("originSlot");
+                    if (originSlotStr !== undefined && originSlotStr !== "") {
+                      handleRemoveCardFromSlot(Number(originSlotStr));
+                    }
+                  }}
+                  className={`p-5 rounded-[2.5rem] space-y-3 border-2 transition-all ${
+                    isDraggingOverAvailable 
+                      ? 'bg-amber-100 border-amber-500 scale-[1.01]' 
+                      : 'bg-amber-50/40 border-amber-200/60'
+                  }`}
+                >
+                  <span className="text-xs font-black text-amber-900 uppercase block tracking-wide">
+                    Danh sách các nhãn chữ (Có thể Kéo thả trực tiếp hoặc Chạm chọn):
+                  </span>
+                  
+                  <div className="flex flex-wrap gap-2.5">
+                    {availableCards.length === 0 ? (
+                      <span className="text-xs italic py-1.5 block text-slate-550 font-bold">
+                        Đã ráp đầy đủ các nhãn! Bạn có thể chuyển sang câu hỏi tiếp theo.
+                      </span>
+                    ) : (
+                      availableCards.map((card, idx) => {
+                        const isFocused = selectedCardToPlace === card;
+                        return (
+                          <div
+                            key={idx}
+                            draggable={true}
+                            onDragStart={(e) => { 
+                              e.dataTransfer.setData("text", card); 
+                              e.dataTransfer.setData("text/plain", card); 
+                              e.dataTransfer.effectAllowed = "move";
+                              setIsDragging(true);
+                            }}
+                            onDragEnd={() => setIsDragging(false)}
+                            onClick={() => setSelectedCardToPlace(isFocused ? null : card)}
+                            className={`px-3 py-2 rounded-xl border border-slate-200 shadow-sm font-bold text-xs cursor-grab active:cursor-grabbing transition-all select-none ${
+                              isFocused 
+                                ? 'bg-amber-400 border-amber-600 text-slate-900 shadow-md scale-105' 
+                                : 'bg-white hover:border-amber-400 hover:text-amber-800'
+                            }`}
+                          >
+                            ☰ {card}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : currentQuestion?.type === 'image_choice' ? (
+              /* Image choice rendering */
+              <div className="space-y-4 font-sans">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
+                  {currentQuestion?.options.map((option, idx) => {
+                    const isThisSelected = selectedMultiOptions.includes(idx);
+                    
+                    const cardStyle = isThisSelected
+                      ? "bg-indigo-50 border-3 border-indigo-500 shadow-[0_6px_0_#4F46E5] scale-[1.02] text-indigo-900"
+                      : "bg-white border-3 border-slate-200 hover:border-indigo-400 shadow-[0_6px_0_#F1F5F9] hover:translate-y-[-2px] active:translate-y-0.5 text-slate-800";
+
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleToggleMultiOption(idx)}
+                        className={`relative w-full rounded-3xl p-4 flex flex-col justify-between items-center transition-all cursor-pointer aspect-square bg-white border-3 overflow-hidden ${cardStyle}`}
+                      >
+                        {/* Selection Checkbox */}
+                        <div className="absolute top-3.5 right-3.5 z-10">
+                          <span className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                            isThisSelected 
+                              ? 'bg-purple-600 border-2 border-white text-white scale-110 shadow-md' 
+                              : 'bg-white border-2 border-slate-300 text-transparent'
+                          }`}>
+                            <svg className="w-3.5 h-3.5 stroke-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          </span>
+                        </div>
+
+                        {/* Alphabet letter marker */}
+                        <div className="absolute top-3.5 left-3.5 z-10 text-[9px] font-black text-slate-400 px-2 py-0.5 bg-slate-100 rounded-lg border border-slate-200 select-none">
+                          {String.fromCharCode(65 + idx)}
+                        </div>
+
+                        {/* Image container */}
+                        <div className="w-full h-full flex items-center justify-center py-2">
+                          <img 
+                            src={option} 
+                            alt={`Đáp án ${String.fromCharCode(65 + idx)}`} 
+                            className="max-h-full max-w-full object-contain drop-shadow-sm select-none"
+                            referrerPolicy="no-referrer"
+                            draggable={false}
+                          />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : currentQuestion?.type === 'multi_choice' ? (
+              /* Multiple choices rendering */
+              <div className="space-y-4">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block text-center mb-1">
+                  ☑️ Đây là câu hỏi chọn nhiều đáp án đúng:
+                </span>
+                <div className="grid grid-cols-1 gap-3">
+                  {currentQuestion?.options.map((option, idx) => {
+                    const isThisSelected = selectedMultiOptions.includes(idx);
+                    
+                    const optionStyle = isThisSelected
+                      ? "bg-indigo-50 border-2 border-indigo-500 font-bold shadow-[0_4px_0_#4F46E5] text-indigo-900"
+                      : "bg-white border-2 border-slate-200 hover:border-indigo-400 shadow-[0_4px_0_#F1F5F9] hover:translate-y-[-2px] text-slate-800";
+
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleToggleMultiOption(idx)}
+                        className={`w-full text-left p-4 rounded-2xl font-semibold text-sm flex items-center justify-between transition-all cursor-pointer ${optionStyle}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className={`w-8 h-8 rounded-lg text-xs font-black flex items-center justify-center shrink-0 ${
+                            isThisSelected ? 'bg-indigo-600 text-white border-2 border-indigo-200 shadow-xs' : 'bg-slate-100'
+                          }`}>
+                            {String.fromCharCode(65 + idx)}
+                          </span>
+                          <span>{option}</span>
+                        </div>
+
+                        <div className="shrink-0 pl-2">
+                          <span className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all ${
+                            isThisSelected 
+                              ? 'bg-indigo-600 border-indigo-600 text-white scale-110' 
+                              : 'bg-white border-slate-300 text-transparent'
+                          }`}>
+                            <svg className="w-3.5 h-3.5 stroke-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              /* Traditional Multiple Choice rendering */
+              <div className="grid grid-cols-1 gap-3">
+                {currentQuestion?.options.map((option, idx) => {
+                  const isSelected = selectedOption === idx;
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => handleSelectOption(idx)}
+                      className={`w-full text-left p-4 rounded-2xl font-semibold text-sm flex items-center justify-between transition-all cursor-pointer ${
+                        isSelected 
+                          ? 'bg-orange-50 border-4 border-vibrant-blue text-vibrant-blue shadow-xs'
+                          : 'bg-white border-2 border-slate-200 hover:border-vibrant-blue hover:text-vibrant-blue text-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className={`w-8 h-8 rounded-lg text-xs font-black flex items-center justify-center shrink-0 ${
+                          isSelected ? 'bg-vibrant-blue text-white border-2 border-orange-100 shadow-xs' : 'bg-slate-100'
+                        }`}>
+                          {String.fromCharCode(65 + idx)}
+                        </span>
+                        <span>{option}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Bottom mini-nav */}
             <div className="flex justify-between items-center">
@@ -562,7 +1126,23 @@ export default function ExamView({ grade,lessonId, token, onBackToDashboard, onE
             <div className="space-y-6">
               {questions.map((q, idx) => {
                 const userAns = userAnswers[idx];
-                const isCorrect = userAns === q.correctIndex;
+                const isCorrect = (q.type && q.type !== 'choice')
+                  ? userAns === 100
+                  : userAns === q.correctIndex;
+                
+                // Determine appropriate badge for the question type
+                const typeLabel = q.type === 'table_match' 
+                  ? 'Ghép lưới' 
+                  : q.type === 'drag_text' 
+                    ? 'Kéo thả chữ' 
+                    : q.type === 'drag_image_text' 
+                      ? 'Kéo thả hình' 
+                      : q.type === 'multi_choice' 
+                        ? 'Chọn nhiều' 
+                        : q.type === 'image_choice' 
+                          ? 'Chọn hình ảnh' 
+                          : 'Trắc nghiệm';
+
                 return (
                   <div key={idx} className="border-b border-slate-100 pb-5 last:border-0 last:pb-0">
                     <div className="flex items-start gap-3">
@@ -571,38 +1151,104 @@ export default function ExamView({ grade,lessonId, token, onBackToDashboard, onE
                       }`}>
                         {idx + 1}
                       </span>
-                      <div className="space-y-2">
-                        <h4 className="font-bold text-slate-800 text-sm leading-snug">{q.text}</h4>
+                      <div className="space-y-2 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="bg-slate-100 text-slate-600 text-[10px] font-black px-2 py-0.5 rounded-full border border-slate-200">
+                            Loại: {typeLabel}
+                          </span>
+                        </div>
+
+                        <h4 className="font-bold text-slate-800 text-sm leading-snug break-words">{q.text}</h4>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs font-semibold">
-                          <div className={`p-2.5 rounded-xl border flex items-center gap-2 ${
-                            isCorrect ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-red-50/70 border-red-100 text-red-900'
-                          }`}>
-                            <span className="text-slate-400 uppercase">Lựa chọn của em:</span>
-                            {userAns !== undefined ? (
-                              <>
-                                <span>{q.options[userAns]}</span>
-                                {isCorrect ? <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> : <X className="w-3.5 h-3.5 text-red-500 shrink-0" />}
-                              </>
-                            ) : (
-                              <span className="italic text-slate-400">Không trả lời</span>
+                        {/* Display answers based on type */}
+                        {(!q.type || q.type === 'choice') ? (
+                          // Standard Choice
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs font-semibold">
+                            <div className={`p-2.5 rounded-xl border flex items-center gap-2 ${
+                              isCorrect ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-red-50/70 border-red-100 text-red-900'
+                            }`}>
+                              <span className="text-slate-400 uppercase">Lựa chọn của em:</span>
+                              {userAns !== undefined ? (
+                                <>
+                                  <span className="truncate">{q.options[userAns]}</span>
+                                  {isCorrect ? <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> : <X className="w-3.5 h-3.5 text-red-500 shrink-0" />}
+                                </>
+                              ) : (
+                                <span className="italic text-slate-400">Không trả lời</span>
+                              )}
+                            </div>
+
+                            {!isCorrect && (
+                              <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center gap-2">
+                                <span className="text-slate-400 uppercase">Đáp án đúng:</span>
+                                <span className="truncate">{q.options[q.correctIndex]}</span>
+                                <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                              </div>
                             )}
                           </div>
-
-                          {!isCorrect && (
-                            <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center gap-2">
-                              <span className="text-slate-400 uppercase">Đáp án đúng đúng:</span>
-                              <span>{q.options[q.correctIndex]}</span>
-                              <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                        ) : q.type === 'table_match' ? (
+                          // Table Match
+                          <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-100 text-[11px] font-bold space-y-1 leading-normal text-slate-500">
+                            <div><strong className="text-slate-800">Cột phân loại:</strong> {q.headers?.join(' | ')}</div>
+                            <div><strong className="text-slate-800">Hàng nội dung:</strong> {q.rows?.join(' | ')}</div>
+                            <div className={`p-2 rounded-xl flex items-center gap-1.5 ${isCorrect ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'}`}>
+                              {isCorrect ? (
+                                <>
+                                  <Check className="w-4 h-4 text-emerald-500" />
+                                  <span>Kết quả khớp bảng hoàn toàn chính xác!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <X className="w-4 h-4 text-red-500" />
+                                  <span>Chưa khớp bảng hoàn toàn chính xác.</span>
+                                </>
+                              )}
                             </div>
-                          )}
-                        </div>
+                          </div>
+                        ) : q.type === 'drag_text' || q.type === 'drag_image_text' ? (
+                          // Drag Matching
+                          <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-100 text-[11px] font-bold space-y-1.5 leading-normal text-slate-500">
+                            <div><strong className="text-slate-800">Các nhãn ghép:</strong> {q.options?.join(' | ')}</div>
+                            <div className={`p-2 rounded-xl flex items-center gap-1.5 ${isCorrect ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'}`}>
+                              {isCorrect ? (
+                                <>
+                                  <Check className="w-4 h-4 text-emerald-500" />
+                                  <span>Ghép nối cặp đôi hoàn toàn chính xác!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <X className="w-4 h-4 text-red-500" />
+                                  <span>Chưa ghép đúng tất cả các cặp tương ứng.</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          // multi_choice or image_choice
+                          <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-100 text-[11px] font-bold space-y-1.5 leading-normal text-slate-500">
+                            <div className={`p-2 rounded-xl flex items-center gap-1.5 ${isCorrect ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'}`}>
+                              {isCorrect ? (
+                                <>
+                                  <Check className="w-4 h-4 text-emerald-500" />
+                                  <span>Chọn tất cả các đáp án đúng hoàn hảo!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <X className="w-4 h-4 text-red-500" />
+                                  <span>Lựa chọn còn thiếu hoặc chưa chính xác.</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Explanation block */}
-                        <div className="bg-slate-50 border border-slate-100 p-3.5 rounded-xl text-xs text-slate-500">
-                          <strong className="text-slate-600 block mb-0.5">💡 Giải thích từ Wippo:</strong>
-                          {q.explanation}
-                        </div>
+                        {q.explanation && (
+                          <div className="bg-slate-50 border border-slate-100 p-3.5 rounded-xl text-xs text-slate-500">
+                            <strong className="text-slate-600 block mb-0.5">💡 Giải thích từ Wippo:</strong>
+                            {q.explanation}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

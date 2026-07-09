@@ -521,37 +521,47 @@ export default function TeacherDashboardView({ user, token, onLogout, isDarkMode
   const renderStudentCard = (student: any, sIdx: number) => {
     const isExpanded = expandedStudentId === student.id;
 
-    // Find if there's any homework assigned for this student's class (only consider active/unexpired, sorted to get the latest)
-    const activeStudentHws = assignments.filter((h: any) => 
+    // Find all homework assigned for this student's class (sorted to get the latest)
+    const studentHws = assignments.filter((h: any) => 
       Number(h.grade) === Number(student.grade) && 
       isSchoolMatch(h.school, student.school || '') && 
-      isClassroomMatch(h.classroom, student.classroom || '') &&
-      new Date().getTime() <= new Date(h.deadline).getTime()
+      isClassroomMatch(h.classroom, student.classroom || '')
     );
 
-    const studentHw = activeStudentHws.length > 0 
-      ? [...activeStudentHws].sort((a: any, b: any) => new Date(b.assignedAt).getTime() - new Date(a.assignedAt).getTime())[0]
+    const studentHw = studentHws.length > 0 
+      ? [...studentHws].sort((a: any, b: any) => new Date(b.assignedAt).getTime() - new Date(a.assignedAt).getTime())[0]
       : null;
 
     let hwText = 'Chưa giao';
     let hwColorClass = 'bg-slate-100 text-slate-500 border border-slate-200';
 
     if (studentHw) {
+      const isCurrentActive = new Date().getTime() <= new Date(studentHw.deadline).getTime();
       const prog = (student.stats.homeworkProgress || []).find((p: any) => 
         p.lessonId === studentHw.lessonId && 
         p.homeworkId === studentHw.id
       );
       if (!prog) {
-        hwText = 'Chưa làm';
-        hwColorClass = 'bg-rose-100/70 text-rose-600 border border-rose-200';
+        if (isCurrentActive) {
+          hwText = 'Chưa làm';
+          hwColorClass = 'bg-rose-100/70 text-rose-600 border border-rose-200';
+        } else {
+          hwText = 'Quá hạn ⏰';
+          hwColorClass = 'bg-slate-200 text-slate-600 border border-slate-300';
+        }
       } else {
         const percent = prog.totalQuestions > 0 ? (prog.correctAnswers / prog.totalQuestions) * 100 : 0;
         if (percent >= 90) {
           hwText = `Đạt (${Math.round(percent)}%)`;
           hwColorClass = 'bg-emerald-100 text-emerald-700 border border-emerald-200';
         } else {
-          hwText = `Chưa đạt (${Math.round(percent)}%)`;
-          hwColorClass = 'bg-amber-100 text-amber-700 border border-amber-200';
+          if (isCurrentActive) {
+            hwText = `Chưa đạt (${Math.round(percent)}%)`;
+            hwColorClass = 'bg-amber-100 text-amber-700 border border-amber-200';
+          } else {
+            hwText = `Trễ hạn / Chưa đạt (${Math.round(percent)}%) ⏰`;
+            hwColorClass = 'bg-slate-200 text-slate-500 border border-slate-300';
+          }
         }
       }
     }
@@ -1551,7 +1561,7 @@ export default function TeacherDashboardView({ user, token, onLogout, isDarkMode
             ) : (
               <div className="space-y-4">
                 <div className="bg-slate-50/85 p-3 rounded-2xl text-[11px] font-semibold text-slate-500 leading-relaxed border border-slate-100">
-                  <span className="text-amber-600 font-black">💡 Quy luật tự động:</span> Khi giáo viên giao bài, thời hạn sẽ tự động là <span className="text-sky-600 font-black">30 ngày</span> để các em thong thả luyện tập. Các em đạt từ <span className="text-emerald-500 font-black">90% trở lên</span> sẽ ở trạng thái <span className="text-emerald-600 font-extrabold">"Đạt"</span>.
+                  <span className="text-amber-600 font-black">💡 Quy luật tự động:</span> Khi giáo viên giao bài, thời hạn sẽ tự động là <span className="text-sky-600 font-black">7 ngày</span> để các em ôn tập và hoàn thành. Các em đạt từ <span className="text-emerald-500 font-black">90% trở lên</span> sẽ ở trạng thái <span className="text-emerald-600 font-extrabold">"Đạt"</span>.
                 </div>
 
                 <div className="space-y-2">
