@@ -2084,10 +2084,16 @@ app.post('/api/homework/assign', authMiddleware, async (req: any, res) => {
     return res.status(400).json({ error: 'Dữ liệu giao bài tập bị thiếu.' });
   }
 
-  // Set the deadline to 30 days from now to give students ample time and avoid timezone/expiration issues entirely
-  const dObj = new Date();
-  dObj.setDate(dObj.getDate() + 30); // 30 days from now
-  const deadlineDate = dObj;
+  // Set the deadline to 7 days from now, ending at exactly 23:59:59 in Vietnam Time (UTC+7)
+  const nowUtc = new Date();
+  // Shift to Vietnam Time (+7 hours) to determine target local date
+  const nowVietnam = new Date(nowUtc.getTime() + (7 * 60 * 60 * 1000));
+  const deadlineVietnam = new Date(nowVietnam);
+  deadlineVietnam.setDate(deadlineVietnam.getDate() + 7);
+  // Set to 23:59:59.999 of that target local day
+  deadlineVietnam.setUTCHours(23, 59, 59, 999);
+  // Convert back to real UTC date by subtracting 7 hours
+  const deadlineDate = new Date(deadlineVietnam.getTime() - (7 * 60 * 60 * 1000));
 
   // Sanitize classroom and lessonId to make a strictly valid Firestore document ID matching: ^[a-zA-Z0-9_\-]+$
   const safeClassroom = String(classroom).trim().replace(/[^a-zA-Z0-9_-]/g, '_');

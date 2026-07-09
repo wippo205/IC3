@@ -898,6 +898,15 @@ export default function RevisionView({
       () => {
         handleShuffleQuestions();
         setUserAnswers({});
+        setTestMatchingAnswers({});
+        setTestAvailableCards({});
+        setTableAnswers({});
+        setMatchingSlots({ 0: null, 1: null, 2: null, 3: null });
+        setAvailableCards([]);
+        setSelectedCardToPlace(null);
+        setIsMatchingCorrect(null);
+        setSelectedMultiOptions([]);
+        setIsMultiConfirmed(false);
         setCurrentIndex(0);
         setShowFinishedCard(false);
         saveProgressToServer(selectedLessonId!, 0, 0, quizQuestions.length, false);
@@ -2944,6 +2953,15 @@ export default function RevisionView({
                     onClick={() => {
                       handleShuffleQuestions();
                       setUserAnswers({});
+                      setTestMatchingAnswers({});
+                      setTestAvailableCards({});
+                      setTableAnswers({});
+                      setMatchingSlots({ 0: null, 1: null, 2: null, 3: null });
+                      setAvailableCards([]);
+                      setSelectedCardToPlace(null);
+                      setIsMatchingCorrect(null);
+                      setSelectedMultiOptions([]);
+                      setIsMultiConfirmed(false);
                       setCurrentIndex(0);
                       setShowFinishedCard(false);
                     }}

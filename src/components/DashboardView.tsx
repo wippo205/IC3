@@ -35,6 +35,44 @@ interface DashboardViewProps {
 export default function DashboardView({ user, token, revisionProgress, homeworkProgress = [], examRecords, fileCount, onStartHomework }: DashboardViewProps) {
   const [assignments, setAssignments] = useState<any[]>([]);
 
+  // Helper for safe and friendly date-time formatting in Vietnam Time style
+  const formatDateTime = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return 'Chưa xác định';
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      return `${hours}:${minutes} ngày ${day}/${month}/${year}`;
+    } catch {
+      return 'Chưa xác định';
+    }
+  };
+
+  const getRemainingTimeText = (deadlineStr: string) => {
+    try {
+      const diffMs = new Date(deadlineStr).getTime() - new Date().getTime();
+      if (diffMs <= 0) return 'Đã hết hạn';
+      
+      const diffMins = Math.floor(diffMs / (1000 * 60));
+      if (diffMins < 60) return `Còn ${diffMins} phút`;
+      
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      if (diffHours < 24) {
+        const mins = diffMins % 60;
+        return `Còn ${diffHours} giờ ${mins} phút`;
+      }
+      
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const hours = diffHours % 24;
+      return `Còn ${diffDays} ngày ${hours} giờ`;
+    } catch {
+      return '';
+    }
+  };
+
   useEffect(() => {
     const fetchHomework = async () => {
       try {
@@ -77,18 +115,8 @@ export default function DashboardView({ user, token, revisionProgress, homeworkP
     new Date(b.assignedAt).getTime() - new Date(a.assignedAt).getTime()
   );
 
-  // 2. Group by lesson ID (each lesson/test separately) and keep only the highest score record of that test/lesson
-  const highestExamsByLesson: Record<string, ExamRecord> = {};
-  revisionExams.forEach(r => {
-    const lessonKey = r.lessonId || r.id;
-    const existing = highestExamsByLesson[lessonKey];
-    if (!existing || r.score > existing.score) {
-      highestExamsByLesson[lessonKey] = r;
-    }
-  });
-
-  // 3. Sort chronologically
-  const filteredExams = Object.values(highestExamsByLesson).sort(
+  // 2. Sort chronologically (show all attempts in history)
+  const filteredExams = [...revisionExams].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   );
 
@@ -240,7 +268,7 @@ export default function DashboardView({ user, token, revisionProgress, homeworkP
                   {detailText}
                 </p>
                 <p className="text-[10px] font-bold opacity-75 mt-0.5">
-                  📅 Ngày giao: {new Date(activeHw.assignedAt).toLocaleDateString('vi-VN')} {new Date(activeHw.assignedAt).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})} • Hạn chót: <span className="font-extrabold underline">Hết ngày hôm nay (23:59)</span>
+                  📅 Ngày giao: {formatDateTime(activeHw.assignedAt)} • Hạn chót: <span className="font-extrabold underline">{formatDateTime(activeHw.deadline)}</span> <span className="text-slate-700 font-black">({getRemainingTimeText(activeHw.deadline)})</span>
                 </p>
               </div>
             </div>
@@ -369,7 +397,7 @@ export default function DashboardView({ user, token, revisionProgress, homeworkP
                 <div className="border-2 border-slate-100 rounded-2xl overflow-hidden shadow-xs bg-slate-50/50 mt-4">
                   <div className="bg-vibrant-pink/10 px-4 py-2 border-b border-slate-100 flex items-center justify-between">
                     <span className="font-extrabold text-[10px] text-vibrant-pink uppercase tracking-wider">📊 Bảng Điểm Kiểm Tra</span>
-                    <span className="text-[9px] font-bold text-slate-400 bg-white/80 py-0.5 px-2 rounded-md">Điểm cao nhất mỗi bài ôn tập</span>
+                    <span className="text-[9px] font-bold text-slate-400 bg-white/80 py-0.5 px-2 rounded-md">Tất cả lượt làm bài ôn tập</span>
                   </div>
                   <div className="overflow-y-auto max-h-48 text-left">
                     <table className="w-full border-collapse text-xs font-bold text-slate-700">
@@ -535,9 +563,14 @@ export default function DashboardView({ user, token, revisionProgress, homeworkP
                             </span>
                           )}
                         </div>
-                        <p className="text-[10px] text-slate-400 font-bold font-display">
-                          Giao: {new Date(h.assignedAt).toLocaleDateString('vi-VN')} {new Date(h.assignedAt).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})}
-                          {!isCurrentActive && <span className="text-rose-500 ml-1.5 font-bold">(Đã hết hạn ⏰)</span>}
+                        <p className="text-[10px] text-slate-450 font-bold font-display leading-relaxed">
+                          📅 Giao: {formatDateTime(h.assignedAt)} <br/>
+                          ⏰ Hạn chót: <span className="font-extrabold text-slate-600">{formatDateTime(h.deadline)}</span>
+                          {isCurrentActive ? (
+                            <span className="text-emerald-600 ml-1.5 font-black">({getRemainingTimeText(h.deadline)})</span>
+                          ) : (
+                            <span className="text-rose-500 ml-1.5 font-bold">(Đã hết hạn ⏰)</span>
+                          )}
                         </p>
                       </div>
 
