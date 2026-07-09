@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -6,16 +7,17 @@ import { createServer as createViteServer } from 'vite';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, getDoc, setDoc, getDocs, collection, query, where, deleteDoc } from 'firebase/firestore';
 import { baseQuestions } from './src/questionsData.ts';
+import { db } from './src/lib/firebase.ts';
 
 // Suppress safe-to-ignore Firestore BloomFilter warning/error messages
-(function() {
+(function () {
   try {
     const originalConsoleError = console.error;
-    console.error = function(...args: any[]) {
+    console.error = function (...args: any[]) {
       const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
       if (
-        msg.includes('BloomFilter') || 
-        msg.includes('BloomFilterError') || 
+        msg.includes('BloomFilter') ||
+        msg.includes('BloomFilterError') ||
         msg.includes('Invalid hash count') ||
         msg.includes('hash count: 0')
       ) {
@@ -25,11 +27,11 @@ import { baseQuestions } from './src/questionsData.ts';
     };
 
     const originalConsoleWarn = console.warn;
-    console.warn = function(...args: any[]) {
+    console.warn = function (...args: any[]) {
       const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
       if (
-        msg.includes('BloomFilter') || 
-        msg.includes('BloomFilterError') || 
+        msg.includes('BloomFilter') ||
+        msg.includes('BloomFilterError') ||
         msg.includes('Invalid hash count') ||
         msg.includes('hash count: 0')
       ) {
@@ -401,7 +403,7 @@ async function getUser(userId: string): Promise<any> {
       handleFirestoreError(err, OperationType.GET, `users/${userId}`);
     }
   }
-  
+
   const db = readDB();
   if (db.students && db.students[userId]) {
     return db.students[userId];
@@ -464,7 +466,7 @@ async function saveUser(userId: string, userData: any): Promise<void> {
       handleFirestoreError(err, OperationType.WRITE, `${targetCollection}/${userId}`);
     }
   }
-  
+
   const db = readDB();
   if (isStaff) {
     if (!db.teachers) db.teachers = {};
@@ -473,7 +475,7 @@ async function saveUser(userId: string, userData: any): Promise<void> {
     if (!db.students) db.students = {};
     db.students[userId] = userData;
   }
-  
+
   writeDB(db);
 }
 
@@ -505,10 +507,10 @@ async function saveHomeworkAssignment(hw: any): Promise<void> {
   if (!db.homeworks) {
     db.homeworks = [];
   }
-  const idx = db.homeworks.findIndex((h: any) => 
-    h.grade === hw.grade && 
-    h.school === hw.school && 
-    h.classroom === hw.classroom && 
+  const idx = db.homeworks.findIndex((h: any) =>
+    h.grade === hw.grade &&
+    h.school === hw.school &&
+    h.classroom === hw.classroom &&
     h.lessonId === hw.lessonId
   );
   if (idx > -1) {
@@ -551,7 +553,7 @@ async function saveUserProgress(
   const sanitizedCompletedQuestions = Math.round(Number(completedQuestions)) || 0;
   const sanitizedCorrectAnswers = Math.round(Number(correctAnswers)) || 0;
   const sanitizedTotalQuestions = Math.round(Number(totalQuestions)) || 0;
-  
+
   let newProgress: any = {
     userId,
     grade: sanitizedGrade,
@@ -580,7 +582,7 @@ async function saveUserProgress(
   if (!db.progress[userId]) {
     db.progress[userId] = [];
   }
-  
+
   const progressList = db.progress[userId];
   const existingIndex = progressList.findIndex(p => p.grade === sanitizedGrade && p.lessonId === String(lessonId));
 
@@ -628,7 +630,7 @@ async function saveUserHomeworkProgress(
   const sanitizedCompletedQuestions = Math.round(Number(completedQuestions)) || 0;
   const sanitizedCorrectAnswers = Math.round(Number(correctAnswers)) || 0;
   const sanitizedTotalQuestions = Math.round(Number(totalQuestions)) || 0;
-  
+
   let newProgress: any = {
     userId,
     grade: sanitizedGrade,
@@ -658,7 +660,7 @@ async function saveUserHomeworkProgress(
   if (!db.progressHomework[userId]) {
     db.progressHomework[userId] = [];
   }
-  
+
   const progressList = db.progressHomework[userId];
   const existingIndex = progressList.findIndex(p => p.grade === sanitizedGrade && p.lessonId === String(lessonId) && p.homeworkId === String(homeworkId));
 
@@ -877,7 +879,7 @@ async function getGradeLessons(grade: number): Promise<any[]> {
   }
   const gradeNum = Number(grade);
   const dbKey = `grade_${gradeNum}`;
-  
+
   if (useFirestore && dbFirestore) {
     try {
       const q = query(collection(dbFirestore, 'lessons'), where('grade', '==', gradeNum));
@@ -900,7 +902,7 @@ async function getGradeLessons(grade: number): Promise<any[]> {
 
 async function saveGradeLessons(grade: number, lessons: any[]): Promise<void> {
   const dbKey = `grade_${grade}`;
-  
+
   if (useFirestore && dbFirestore) {
     try {
       for (const lesson of lessons) {
@@ -922,7 +924,7 @@ async function saveGradeLessons(grade: number, lessons: any[]): Promise<void> {
 
 async function deleteGradeLesson(grade: number, lessonId: string): Promise<any[]> {
   const dbKey = `grade_${grade}`;
-  
+
   if (useFirestore && dbFirestore) {
     try {
       const docId = `grade_${grade}_${lessonId}`;
@@ -935,7 +937,7 @@ async function deleteGradeLesson(grade: number, lessonId: string): Promise<any[]
   // Properly load current lessons to ensure consistency in both Local and Firestore configurations
   const currentLessons = await getGradeLessons(grade);
   const remainingLessons = currentLessons.filter((l: any) => l.id !== lessonId);
-  
+
   // Normalize numbering
   remainingLessons.forEach((l: any, idx: number) => {
     l.lessonNum = idx + 1;
@@ -955,17 +957,17 @@ async function deleteGradeLesson(grade: number, lessonId: string): Promise<any[]
 async function getQuestionBank(): Promise<any[]> {
   let questions: any[] = [];
   let isFirestoreInitialized = false;
-  
+
   if (useFirestore && dbFirestore) {
     try {
       const q = query(collection(dbFirestore, 'questions'));
       const querySnapshot = await getDocs(q);
       const docs = querySnapshot.docs.map(doc => doc.data());
-      
+
       if (docs.length > 0) {
         isFirestoreInitialized = true;
       }
-      
+
       questions = docs;
     } catch (err) {
       console.error('Firestore getQuestionBank error:', err);
@@ -974,7 +976,7 @@ async function getQuestionBank(): Promise<any[]> {
 
   // Fallback or read from local DB
   const db = readDB();
-  
+
   let isMetadataInitialized = false;
   if (useFirestore && dbFirestore) {
     try {
@@ -987,10 +989,10 @@ async function getQuestionBank(): Promise<any[]> {
     }
   }
 
-  const alreadyInitialized = db.questionsInitialized === true || 
-                             isFirestoreInitialized || 
-                             isMetadataInitialized ||
-                             (db.questions && db.questions.length > 0);
+  const alreadyInitialized = db.questionsInitialized === true ||
+    isFirestoreInitialized ||
+    isMetadataInitialized ||
+    (db.questions && db.questions.length > 0);
 
   if (!useFirestore || questions.length === 0) {
     if (db.questions && db.questions.length > 0) {
@@ -1004,7 +1006,7 @@ async function getQuestionBank(): Promise<any[]> {
   if (useFirestore && dbFirestore) {
     try {
       const hasLegacyMarkers = questions.some(q => q.id === 'init_flag_marker' || (q.id && q.id.startsWith('hw_')));
-      
+
       if (hasLegacyMarkers) {
         console.log('Completely deleting legacy question markers and default homework questions from Firestore...');
         await deleteDoc(doc(dbFirestore, 'questions', 'init_flag_marker'));
@@ -1038,21 +1040,21 @@ async function getQuestionBank(): Promise<any[]> {
         qNum: idx + 1,
         createdAt: new Date().toISOString()
       }));
-      
+
       // Save them to Firestore if available
       if (useFirestore && dbFirestore) {
         for (const item of initialized) {
           await setDoc(doc(dbFirestore, 'questions', item.id), item);
         }
-        
+
         // Save the clean metadata flag to Firestore users/qb_metadata (NOT the questions collection)
         await setDoc(doc(dbFirestore, 'users', 'qb_metadata'), { initialized: true });
       }
-      
+
       db.questions = initialized;
       db.questionsInitialized = true;
       writeDB(db);
-      
+
       cleanQuestions = initialized;
     } catch (err) {
       console.error('Error initializing Question Bank with baseQuestions:', err);
@@ -1108,7 +1110,7 @@ async function getQuestionBank(): Promise<any[]> {
 async function saveQuestionToBank(questionDraft: any): Promise<any[]> {
   const allQs = await getQuestionBank();
   const existIndex = allQs.findIndex(q => q.id === questionDraft.id);
-  
+
   let updatedQs = [...allQs];
   if (existIndex >= 0) {
     // Keep qNum from the existing question
@@ -1142,7 +1144,7 @@ async function saveQuestionToBank(questionDraft: any): Promise<any[]> {
 async function deleteQuestionFromBank(questionId: string): Promise<any[]> {
   const allQs = await getQuestionBank();
   const remainingQs = allQs.filter(q => q.id !== questionId);
-  
+
   // Re-index remaining questions sequentially 1 to (N-1)
   remainingQs.forEach((q, idx) => {
     q.qNum = idx + 1;
@@ -1212,6 +1214,50 @@ function parseTokenPayload(token: string): { userId: string; sessionId?: string;
 // Make sure our server handles JSON requests with generous size limits for base64 file uploads
 app.use(express.json({ limit: '50mb' }));
 
+function toSheetExportUrl(value: string) {
+  if (!value) return '';
+  const trimmed = value.trim();
+
+  if (trimmed.includes('docs.google.com/spreadsheets/d/')) {
+    if (trimmed.includes('/pub?output=csv')) {
+      return trimmed;
+    }
+
+    if (trimmed.includes('/pubhtml')) {
+      return trimmed.replace('/pubhtml', '/pub?output=csv');
+    }
+
+    const match = trimmed.match(/\/spreadsheets\/d\/(?:e\/)?([a-zA-Z0-9-_]+)/);
+    if (match) {
+      const spreadsheetId = match[1];
+      return `https://docs.google.com/spreadsheets/d/e/${spreadsheetId}/pub?output=csv`;
+    }
+  }
+
+  return trimmed;
+}
+
+app.get('/api/login-sheet-data', async (req, res) => {
+  try {
+    const sheetUrl = process.env.VITE_LOGIN_SHEET_CSV_URL || '';
+    if (!sheetUrl) {
+      return res.status(400).json({ error: 'Thiếu cấu hình VITE_LOGIN_SHEET_CSV_URL trên server.' });
+    }
+
+    const exportUrl = toSheetExportUrl(sheetUrl);
+    const response = await fetch(exportUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const text = await response.text();
+    if (!response.ok || !text || text.includes('<!DOCTYPE') || text.includes('Sign in') || text.includes('Google Accounts')) {
+      return res.status(502).json({ error: 'Google Sheets chưa được công khai hoặc URL không trả về dữ liệu hợp lệ.' });
+    }
+
+    res.type('text/plain; charset=utf-8').send(text);
+  } catch (error: any) {
+    console.error('Failed to proxy Google Sheets data:', error);
+    res.status(500).json({ error: 'Lỗi khi đọc Google Sheets từ server.' });
+  }
+});
+
 // Middleware to extract authentication from Bearer token
 async function authMiddleware(req: any, res: any, next: any) {
   try {
@@ -1224,7 +1270,7 @@ async function authMiddleware(req: any, res: any, next: any) {
     if (!payload) {
       return res.status(401).json({ error: 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn.' });
     }
-    
+
     const { userId, sessionId } = payload;
     const user = await getUser(userId);
     if (!user) {
@@ -1239,7 +1285,7 @@ async function authMiddleware(req: any, res: any, next: any) {
         concurrentLogout: true
       });
     }
-    
+
     req.userId = userId;
     req.user = user;
     next();
@@ -1357,18 +1403,18 @@ app.post('/api/auth/register', async (req, res) => {
     'đéo', 'địt', 'lồn', 'buồi', 'cặc', 'vcl', 'clm', 'dcm', 'đm', 'vkl', 'đỉ', 'bú', 'chó', 'dâm', 'ngu',
     'fuck', 'bitch', 'shit', 'asshole', 'idiot', 'cac', 'lon', 'buoi', 'deo', 'dit', 'dm', 'con cac'
   ];
-  
+
   const nicknameLower = cleanNickname.toLowerCase();
   const schoolLower = cleanSchool.toLowerCase();
 
-  const getWords = (text: string) => 
+  const getWords = (text: string) =>
     text.split(/[^a-z0-9àáâãèéêìíòóôõùúăđĩũơưăâêôơưáàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđ]/i).filter(Boolean);
 
   const checkProfanity = (textLower: string) => {
     const words = getWords(textLower);
     const hasExactBadWord = words.some(w => blacklist.includes(w));
     if (hasExactBadWord) return true;
-    
+
     return blacklist.some(phrase => {
       if (phrase.includes(' ')) {
         const pattern = new RegExp(`(^|\\s)${phrase}($|\\s)`);
@@ -1442,6 +1488,80 @@ app.post('/api/auth/register', async (req, res) => {
       role: 'student',
     }
   });
+});
+
+function buildSheetUsername(name: string, classroom: string, school: string): string {
+  const parts = [name, classroom, school]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)
+    .map((value) => value.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''))
+    .filter(Boolean);
+
+  const base = parts.join('-') || 'student';
+  return `student-${base}`.replace(/-+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+app.post('/api/auth/google-sheet-login', async (req, res) => {
+  try {
+    const { name, classroom, school, password, grade } = req.body || {};
+
+    if (!name || !classroom || !school || !password) {
+      return res.status(400).json({ error: 'Thiếu thông tin để đăng nhập bằng Google Sheets.' });
+    }
+
+    const cleanUsername = buildSheetUsername(name, classroom, school);
+    let user = await findUserByUsername(cleanUsername);
+
+    if (!user) {
+      const salt = crypto.randomBytes(16).toString('hex');
+      const passwordHash = crypto.pbkdf2Sync(String(password), salt, 1000, 64, 'sha512').toString('hex');
+      const id = cleanUsername;
+      const sessionId = Date.now() + '-' + Math.random().toString(36).substring(2, 9);
+
+      user = {
+        id,
+        username: cleanUsername,
+        nickname: String(name).trim(),
+        grade: Number(grade) || undefined,
+        school: String(school).trim(),
+        classroom: String(classroom).trim(),
+        role: 'student',
+        passwordHash,
+        salt,
+        createdAt: new Date().toISOString(),
+        currentSessionId: sessionId,
+      };
+
+      await saveUser(id, user);
+    }
+
+    const sessionId = Date.now() + '-' + Math.random().toString(36).substring(2, 9);
+    user.currentSessionId = sessionId;
+    user.username = user.username || cleanUsername;
+    user.nickname = user.nickname || String(name).trim();
+    user.school = String(school).trim();
+    user.classroom = String(classroom).trim();
+    user.grade = Number(grade) || user.grade;
+    user.role = user.role || 'student';
+    await saveUser(user.id, user);
+
+    const token = generateToken(user.id, sessionId);
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        nickname: user.nickname,
+        grade: user.grade,
+        school: user.school,
+        classroom: user.classroom,
+        role: user.role || 'student',
+      }
+    });
+  } catch (error: any) {
+    console.error('Google Sheets login error:', error);
+    res.status(500).json({ error: 'Không thể tạo hoặc đăng nhập tài khoản từ Google Sheets.' });
+  }
 });
 
 // Login
@@ -1597,7 +1717,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
       if (Number(user.grade) !== Number(grade)) {
         return res.status(400).json({ error: 'Khối lớp học tập không trùng khớp.' });
       }
-      
+
       const userClassNormal = (user.classroom || '').trim().replace(/[/\-.\s]+/g, '').toLowerCase();
       const inputClassNormal = String(classroom).trim().replace(/[/\-.\s]+/g, '').toLowerCase();
       if (userClassNormal !== inputClassNormal) {
@@ -1934,7 +2054,7 @@ app.post('/api/teacher/clear-students', authMiddleware, async (req: any, res) =>
       db.exams = {};
       db.homeworks = [];
       db.progressHomework = {};
-      
+
       // Keep only files uploaded by teachers or admins
       const newFiles: Record<string, any> = {};
       if (db.files) {
@@ -1973,7 +2093,7 @@ app.post('/api/teacher/clear-students', authMiddleware, async (req: any, res) =>
 // Update progress
 app.post('/api/progress/update', authMiddleware, async (req: any, res) => {
   const { grade, lessonId, completedQuestions, correctAnswers, totalQuestions, isCompleted } = req.body;
-  
+
   if (grade === undefined || !lessonId || completedQuestions === undefined || correctAnswers === undefined || totalQuestions === undefined) {
     return res.status(400).json({ error: 'Giá trị thông số tiến trình không hợp lệ.' });
   }
@@ -1998,7 +2118,7 @@ app.post('/api/progress/update', authMiddleware, async (req: any, res) => {
 // Update homework progress
 app.post('/api/homework-progress/update', authMiddleware, async (req: any, res) => {
   const { grade, lessonId, homeworkId, completedQuestions, correctAnswers, totalQuestions, isCompleted } = req.body;
-  
+
   if (grade === undefined || !lessonId || !homeworkId || completedQuestions === undefined || correctAnswers === undefined || totalQuestions === undefined) {
     return res.status(400).json({ error: 'Giá trị thông số tiến trình bài tập về nhà không hợp lệ.' });
   }
@@ -2038,19 +2158,8 @@ app.get('/api/exams', authMiddleware, async (req: any, res) => {
 
 // Save exam record
 app.post('/api/exams/save', authMiddleware, async (req: any, res) => {
-  const { grade, score, correctCount, totalQuestions, durationSeconds, isRevisionTest, lessonId, lessonTitle } = req.body;
-  
-  if (grade === undefined || score === undefined || correctCount === undefined || totalQuestions === undefined || durationSeconds === undefined) {
-    return res.status(400).json({ error: 'Dữ liệu bài kiểm tra bị thiếu.' });
-  }
 
-  // Prevent teacher/admin actions from writing to database
-  if (req.user && (req.user.role === 'teacher' || req.user.role === 'admin')) {
-    return res.status(201).json({ success: true, isDemo: true, record: {}, exams: [] });
-  }
-
-  const record = await saveExamRecord(
-    req.userId,
+  const {
     grade,
     score,
     correctCount,
@@ -2059,11 +2168,249 @@ app.post('/api/exams/save', authMiddleware, async (req: any, res) => {
     isRevisionTest,
     lessonId,
     lessonTitle
-  );
-  const exams = await getUserExams(req.userId);
+  } = req.body;
 
-  res.status(201).json({ success: true, record, exams });
+
+  console.log("REQUEST SAVE EXAM:", req.body);
+
+
+
+  if (
+    grade === undefined ||
+    score === undefined ||
+    correctCount === undefined ||
+    totalQuestions === undefined ||
+    durationSeconds === undefined
+  ) {
+
+    return res.status(400).json({
+      error: 'Dữ liệu bài kiểm tra bị thiếu.'
+    });
+
+  }
+
+
+
+  // Không cho giáo viên/admin ghi điểm
+  if (
+    req.user &&
+    (
+      req.user.role === 'teacher' ||
+      req.user.role === 'admin'
+    )
+  ) {
+
+    return res.status(201).json({
+      success: true,
+      isDemo: true,
+      record: {},
+      exams: []
+    });
+
+  }
+
+
+
+
+  // Lưu database
+
+  const record = await saveExamRecord(
+
+    req.userId,
+
+    grade,
+
+    score,
+
+    correctCount,
+
+    totalQuestions,
+
+    durationSeconds,
+
+    isRevisionTest,
+
+    lessonId,
+
+    lessonTitle
+
+  );
+
+
+
+  console.log(
+    "SAVE DATABASE OK:",
+    record
+  );
+
+
+
+
+
+  // Lấy tên bài bằng id
+
+  const realLessonTitle =
+    await getLessonTitleById(
+      Number(grade),
+      lessonId
+    );
+
+
+
+  console.log(
+    "LESSON TITLE:",
+    realLessonTitle
+  );
+  // Đồng bộ Google Sheet
+
+  await syncExamResultToSheet({
+
+    user:req.user,
+
+    userId:req.userId,
+
+    grade,
+
+    score,
+
+    correctCount,
+
+    totalQuestions,
+
+    durationSeconds,
+
+
+    examType:
+      realLessonTitle ||
+      lessonTitle ||
+      ""
+
+  });
+
+  const exams =
+    await getUserExams(req.userId);
+
+
+
+  res.status(201).json({
+
+    success: true,
+
+    record,
+
+    exams
+
+  });
+
+
 });
+
+async function syncExamResultToSheet(data:any){
+  
+const user = data.user;
+
+
+if(!user){
+
+ console.log(
+   "KHONG CO THONG TIN USER"
+ );
+
+ return;
+
+}
+  console.log(
+    "FIREBASE USER:",
+    user
+  );
+console.log(
+ "RAW TIME:",
+ data.durationSeconds
+);
+  const payload = {
+
+    name:
+      user.nickname ||
+      user.name ||
+      "",
+
+
+    className:
+      user.class ||
+      user.className ||
+      user.classroom ||
+      "",
+
+
+    school:
+      user.school ||
+      "",
+
+
+    password:
+      user.password ||
+      "",
+
+
+    examType:
+      data.examType,
+
+
+    correct:
+      data.correctCount,
+
+
+    totalQuestions:
+      data.totalQuestions,
+
+
+durationSeconds:
+data.durationSeconds
+
+  };
+
+
+
+  console.log(
+    "SEND SHEET:",
+    payload
+  );
+
+
+
+  console.log(
+    "WEBHOOK:",
+    process.env.GOOGLE_SHEET_WEBHOOK
+  );
+
+
+
+  const response = await fetch(
+    process.env.GOOGLE_SHEET_WEBHOOK!,
+    {
+      method:"POST",
+
+      headers:{
+        "Content-Type":"application/json"
+      },
+
+      body:
+        JSON.stringify(payload)
+    }
+  );
+
+
+
+  const result =
+    await response.text();
+
+
+  console.log(
+    "SHEET RESULT:",
+    result
+  );
+
+}
 
 // Homework/Assignments Management Endpoints
 app.get('/api/homework/assignments', authMiddleware, async (req: any, res) => {
@@ -2220,7 +2567,7 @@ app.post('/api/lessons/delete', authMiddleware, async (req: any, res) => {
 
   try {
     const remainingLessons = await deleteGradeLesson(Number(grade), lessonId);
-    
+
     // Normalize numbering
     remainingLessons.forEach((l: any, idx: number) => {
       l.lessonNum = idx + 1;
@@ -2252,6 +2599,29 @@ app.post('/api/lessons/delete', authMiddleware, async (req: any, res) => {
     res.status(500).json({ error: 'Lỗi hệ thống khi xóa bài học.' });
   }
 });
+
+// Get lesson title by lessonId
+async function getLessonTitleById(
+  grade: number,
+  lessonId: string
+) {
+
+  const lessons = await getGradeLessons(grade);
+
+
+  const lesson = lessons.find(
+    (l: any) => l.id === lessonId
+  );
+
+
+  if (!lesson) {
+    return "";
+  }
+
+
+  return lesson.title || "";
+
+}
 
 // Question Bank API Endpoints (Admin Only)
 app.get('/api/questions', authMiddleware, async (req: any, res) => {
@@ -2324,7 +2694,7 @@ app.post('/api/lessons/reset', authMiddleware, async (req: any, res) => {
     }
 
     const defaultLessons = await getGradeLessons(gradeNum);
-    
+
     // Resolve dynamic questions before returning to UI
     const allQuestions = await getQuestionBank();
     const gradeQuestions = allQuestions.filter((q: any) => !q.grade || Number(q.grade) === gradeNum);

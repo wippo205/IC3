@@ -15,13 +15,14 @@ import {
   Menu,
   X
 } from 'lucide-react';
-import LoginView from './components/LoginView';
+import LoginViewGoogleSheets from './components/LoginViewGoogleSheets';
 import DashboardView from './components/DashboardView';
 import RevisionView from './components/RevisionView';
 import ExamView from './components/ExamView';
 import FileStorageView from './components/FileStorageView';
 import TeacherDashboardView from './components/TeacherDashboardView';
 import { LessonProgress, ExamRecord, HomeworkProgress } from './types';
+import LoginView from './components/LoginView';
 
 export default function App() {
   const [token, setToken] = useState<string | null>(
@@ -74,11 +75,36 @@ export default function App() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
 
+  const sanitizeToken = (value: string | null | undefined) => {
+    if (!value) return null;
+    const cleaned = value.replace(/[^\u0000-\u007F]/g, '');
+    return cleaned || null;
+  };
+
+  const buildAuthHeaders = (value: string | null | undefined) => {
+    const safeToken = sanitizeToken(value);
+    if (!safeToken) return {};
+    return { Authorization: `Bearer ${safeToken}` };
+  };
+
+  const normalizeHeaders = (headers?: HeadersInit) => {
+    if (!headers) return undefined;
+
+    const headerEntries: Record<string, string> = {};
+    const normalizedHeaders = new Headers(headers);
+    normalizedHeaders.forEach((value, key) => {
+      headerEntries[key] = value.replace(/[^\u0000-\u007F]/g, '');
+    });
+
+    return headerEntries;
+  };
+
   // Global fetch override to catch 401 concurrent logouts
   useEffect(() => {
     const originalFetch = window.fetch;
-    window.fetch = async (...args) => {
-      const response = await originalFetch(...args);
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const safeInit = init ? { ...init, headers: normalizeHeaders(init.headers) } : undefined;
+      const response = await originalFetch(input, safeInit);
       if (response.status === 401) {
         try {
           const clone = response.clone();
@@ -114,9 +140,15 @@ export default function App() {
   }, [token, userId]);
 
   const verifyUserSession = async () => {
+    const safeToken = sanitizeToken(token);
+    if (!safeToken) {
+      handleLogout();
+      return;
+    }
+
     try {
       const resp = await fetch('/api/auth/me', {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: buildAuthHeaders(safeToken)
       });
       const data = await resp.json();
       if (resp.ok) {
@@ -137,14 +169,20 @@ export default function App() {
   };
 
   const fetchUserStats = async () => {
+    const safeToken = sanitizeToken(token);
+    if (!safeToken) {
+      setLoadingStats(false);
+      return;
+    }
+
     setLoadingStats(true);
     try {
       // Parallel fetch to make loading extremely agile and robust
       const [progressResp, homeworkProgressResp, examsResp, filesResp] = await Promise.all([
-        fetch('/api/progress', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/homework-progress', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/exams', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/files', { headers: { 'Authorization': `Bearer ${token}` } })
+        fetch('/api/progress', { headers: buildAuthHeaders(safeToken) }),
+        fetch('/api/homework-progress', { headers: buildAuthHeaders(safeToken) }),
+        fetch('/api/exams', { headers: buildAuthHeaders(safeToken) }),
+        fetch('/api/files', { headers: buildAuthHeaders(safeToken) })
       ]);
 
       const progressData = await progressResp.json();
@@ -165,15 +203,16 @@ export default function App() {
   };
 
   const handleLoginSuccess = (newToken: string, newUser: { id: string; username: string; nickname: string; grade?: number; school?: string; classroom?: string; role?: 'student' | 'teacher' | 'admin' }, rememberMe: boolean) => {
-    setToken(newToken);
+    const safeToken = sanitizeToken(newToken) || `gsheet-${newUser.id}`;
+    setToken(safeToken);
     setUser(newUser);
     if (rememberMe) {
-      localStorage.setItem('wippo_token', newToken);
+      localStorage.setItem('wippo_token', safeToken);
       localStorage.setItem('wippo_user', JSON.stringify(newUser));
       sessionStorage.removeItem('wippo_token');
       sessionStorage.removeItem('wippo_user');
     } else {
-      sessionStorage.setItem('wippo_token', newToken);
+      sessionStorage.setItem('wippo_token', safeToken);
       sessionStorage.setItem('wippo_user', JSON.stringify(newUser));
       localStorage.removeItem('wippo_token');
       localStorage.removeItem('wippo_user');
@@ -274,8 +313,8 @@ export default function App() {
 
   if (!token || !user) {
     return (
-      <LoginView 
-        onSuccess={handleLoginSuccess} 
+      <LoginView
+        onSuccess={handleLoginSuccess}
         initialError={sessionError}
         onClearInitialError={() => setSessionError(null)}
       />
@@ -594,6 +633,7 @@ export default function App() {
             >
               <ExamView 
                 grade={user.grade} 
+                lesson = {selectedHomeworkLessonId || undefined}
                 token={token} 
                 onBackToDashboard={() => handleNavigation('dashboard')} 
                 onExamSaved={fetchUserStats}

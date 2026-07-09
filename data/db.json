@@ -3,7 +3,131 @@
   "students": {},
   "teachers": {},
   "progress": {},
-  "exams": {},
+  "progressHomework": {},
+  "exams": {
+    "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh": [
+      {
+        "id": "fd5d2e2c-095a-425d-98c6-c6a0b365129f",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 60,
+        "correctCount": 3,
+        "totalQuestions": 5,
+        "durationSeconds": 385,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1780132862451",
+        "lessonTitle": "Ôn Tập 1",
+        "createdAt": "2026-07-09T08:37:18.457Z"
+      },
+      {
+        "id": "5c68bb90-74fa-4151-8292-aaae1e64815d",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 40,
+        "correctCount": 2,
+        "totalQuestions": 5,
+        "durationSeconds": 591,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1780132862451",
+        "lessonTitle": "Ôn Tập 1",
+        "createdAt": "2026-07-09T08:40:46.478Z"
+      },
+      {
+        "id": "2297ee05-9643-4f88-8530-bb76f92adbad",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 40,
+        "correctCount": 2,
+        "totalQuestions": 5,
+        "durationSeconds": 15,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1783586491270",
+        "lessonTitle": "Ôn Tập 2",
+        "createdAt": "2026-07-09T08:42:29.972Z"
+      },
+      {
+        "id": "ec4f73c7-e165-4078-9129-46a58687b944",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 100,
+        "correctCount": 5,
+        "totalQuestions": 5,
+        "durationSeconds": 25,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1780132862451",
+        "lessonTitle": "Ôn Tập 1",
+        "createdAt": "2026-07-09T08:43:12.264Z"
+      },
+      {
+        "id": "a73acd74-a2ac-48af-ac02-5b185933f07c",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 100,
+        "correctCount": 5,
+        "totalQuestions": 5,
+        "durationSeconds": 20,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1780132862451",
+        "lessonTitle": "Ôn Tập 1",
+        "createdAt": "2026-07-09T08:46:01.106Z"
+      },
+      {
+        "id": "417139d0-f588-499e-b86d-762de446c2aa",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 20,
+        "correctCount": 1,
+        "totalQuestions": 5,
+        "durationSeconds": 112,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1780132862451",
+        "lessonTitle": "Ôn Tập 1",
+        "createdAt": "2026-07-09T08:47:33.221Z"
+      },
+      {
+        "id": "c31cf5dd-00e3-4649-a5ae-28f9a11b21f8",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 20,
+        "correctCount": 1,
+        "totalQuestions": 5,
+        "durationSeconds": 227,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1780132862451",
+        "lessonTitle": "Ôn Tập 1",
+        "createdAt": "2026-07-09T08:49:27.637Z"
+      },
+      {
+        "id": "75900e5a-da36-4389-a373-29efdacec197",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 20,
+        "correctCount": 1,
+        "totalQuestions": 5,
+        "durationSeconds": 270,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1780132862451",
+        "lessonTitle": "Ôn Tập 1",
+        "createdAt": "2026-07-09T08:50:10.943Z"
+      },
+      {
+        "id": "cef21d3c-a301-4dcb-a843-ce1d0184fb99",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 100,
+        "correctCount": 5,
+        "totalQuestions": 5,
+        "durationSeconds": 10,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1780132862451",
+        "lessonTitle": "Ôn Tập 1",
+        "createdAt": "2026-07-09T08:50:47.373Z"
+      }
+    ]
+  },
   "files": {},
-  "lessons": {}
+  "lessons": {},
+  "homeworks": [],
+  "questions": [],
+  "questionsInitialized": true
 }

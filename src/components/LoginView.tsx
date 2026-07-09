@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { LogIn, UserPlus, AlertCircle, BookOpen, Eye, EyeOff, ArrowLeft, CheckCircle2, KeyRound } from 'lucide-react';
+import LoginViewGoogleSheets from './LoginViewGoogleSheets';
 
 interface LoginViewProps {
   onSuccess: (token: string, user: { id: string; username: string; nickname: string; grade?: number; school?: string; classroom?: string; role?: 'student' | 'teacher' | 'admin' }, rememberMe: boolean) => void;
@@ -47,6 +48,7 @@ export default function LoginView({ onSuccess, initialError, onClearInitialError
   const [grade, setGrade] = useState(6); // default to lớp 6
   const [regCode, setRegCode] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [loginMode, setLoginMode] = useState<'default' | 'google-sheet'>('google-sheet');
 
   useEffect(() => {
     if (initialError) {
@@ -563,7 +565,25 @@ export default function LoginView({ onSuccess, initialError, onClearInitialError
         )}
 
         {/* Form Container */}
-        {isForgotPassword ? (
+        {loginMode === 'google-sheet' ? (
+          <div className="space-y-4">
+            <button
+              type="button"
+              onClick={() => {
+                setLoginMode('default');
+                setError(null);
+              }}
+              className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900"
+            >
+              <ArrowLeft className="w-4 h-4" /> Quay lại đăng nhập thường
+            </button>
+            <LoginViewGoogleSheets
+              onSuccess={onSuccess}
+              initialError={error}
+              onClearInitialError={() => setError(null)}
+            />
+          </div>
+        ) : isForgotPassword ? (
           <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-extrabold text-slate-700 mb-1">
@@ -690,6 +710,24 @@ export default function LoginView({ onSuccess, initialError, onClearInitialError
           </form>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
+            {isLogin && (
+              <motion.button
+                type="button"
+                whileHover={{ scale: 1.01, y: -1 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={() => setLoginMode('google-sheet')}
+                className="flex w-full items-center justify-between rounded-2xl border border-sky-200 bg-gradient-to-r from-sky-50 to-cyan-50 px-4 py-3 text-left shadow-sm transition hover:shadow-md"
+              >
+                <div>
+                  <p className="text-sm font-bold text-sky-700">Đăng nhập bằng GG Sheet</p>
+                  <p className="text-xs text-sky-600">Chọn học sinh từ bảng dữ liệu trực tiếp</p>
+                </div>
+                <div className="rounded-full bg-white/80 px-2.5 py-1 text-xs font-semibold text-sky-700">
+                  Mới
+                </div>
+              </motion.button>
+            )}
+
             <div>
               <label className="block text-sm font-extrabold text-slate-700 mb-1">
                 Tên đăng nhập
