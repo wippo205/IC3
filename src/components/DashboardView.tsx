@@ -35,20 +35,49 @@ interface DashboardViewProps {
 export default function DashboardView({ user, token, revisionProgress, homeworkProgress = [], examRecords, fileCount, onStartHomework }: DashboardViewProps) {
   const [assignments, setAssignments] = useState<any[]>([]);
 
-  const sanitizeToken = (value: string | null | undefined) => {
-    if (!value) return null;
-    const cleaned = value.replace(/[^\u0000-\u007F]/g, '');
-    return cleaned || null;
+  // Helper for safe and friendly date-time formatting in Vietnam Time style
+  const formatDateTime = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return 'Chưa xác định';
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      return `${hours}:${minutes} ngày ${day}/${month}/${year}`;
+    } catch {
+      return 'Chưa xác định';
+    }
+  };
+
+  const getRemainingTimeText = (deadlineStr: string) => {
+    try {
+      const diffMs = new Date(deadlineStr).getTime() - new Date().getTime();
+      if (diffMs <= 0) return 'Đã hết hạn';
+      
+      const diffMins = Math.floor(diffMs / (1000 * 60));
+      if (diffMins < 60) return `Còn ${diffMins} phút`;
+      
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      if (diffHours < 24) {
+        const mins = diffMins % 60;
+        return `Còn ${diffHours} giờ ${mins} phút`;
+      }
+      
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const hours = diffHours % 24;
+      return `Còn ${diffDays} ngày ${hours} giờ`;
+    } catch {
+      return '';
+    }
   };
 
   useEffect(() => {
     const fetchHomework = async () => {
-      const safeToken = sanitizeToken(token);
-      if (!safeToken) return;
-
       try {
         const resp = await fetch('/api/homework/assignments', {
-          headers: { 'Authorization': `Bearer ${safeToken}` }
+          headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await resp.json();
         if (resp.ok && data.success) {

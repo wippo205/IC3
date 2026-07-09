@@ -18,13 +18,12 @@ import {
 
 interface ExamViewProps {
   grade: number;
-  lessonId: number;
   token: string;
   onBackToDashboard: () => void;
   onExamSaved: () => void;
 }
 
-export default function ExamView({ grade,lessonId, token, onBackToDashboard, onExamSaved }: ExamViewProps) {
+export default function ExamView({ grade, token, onBackToDashboard, onExamSaved }: ExamViewProps) {
   const getExamConfig = (g: number) => {
     return { qCount: 45, timeMins: 45 }; // IC3 Exam Standard: exactly 45 questions, 45 minutes
   };
@@ -405,37 +404,16 @@ export default function ExamView({ grade,lessonId, token, onBackToDashboard, onE
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        // body: JSON.stringify({
-        //   grade,
-        //   score: scorePoints, // Save the 1000-based points
-        //   correctCount: corrects,
-        //   totalQuestions: questions.length,
-        //   durationSeconds: (config.timeMins * 60) - timeLeft,
-        //   isRevisionTest: false,
-        //   lessonId: `exam_final_grade_${grade}`,
-        //   lessonTitle: `Đề thi thử tổng hợp IC3 Lớp ${grade}`
-        // })
         body: JSON.stringify({
-
-  grade,
-
-  score: scorePoints,
-
-  correctCount: corrects,
-
-  totalQuestions: questions.length,
-
-
-  durationSeconds:
-    (config.timeMins * 60) - timeLeft,
-
-
-  isRevisionTest: true,
-
-
-  lessonId: lessonId,
-
-})
+          grade,
+          score: scorePoints, // Save the 1000-based points
+          correctCount: corrects,
+          totalQuestions: questions.length,
+          durationSeconds: (config.timeMins * 60) - timeLeft,
+          isRevisionTest: false,
+          lessonId: `exam_final_grade_${grade}`,
+          lessonTitle: `Đề thi thử tổng hợp IC3 Lớp ${grade}`
+        })
       });
       onExamSaved();
     } catch (err) {

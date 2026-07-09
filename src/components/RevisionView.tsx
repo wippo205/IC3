@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Question } from '../types';
@@ -50,8 +50,6 @@ export default function RevisionView({
   const [lessons, setLessons] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
-
-const startTimeRef = useRef<number>(0);
 
   // Mode status 
   const [isTeacherMode, setIsTeacherMode] = useState(userRole === 'teacher');
@@ -857,18 +855,6 @@ const startTimeRef = useRef<number>(0);
         const correctCount = totalCorrect;
         const scoreVal = quizQuestions.length > 0 ? Math.round((correctCount / quizQuestions.length) * 100) : 0;
 
-        const durationSeconds =
-  startTimeRef.current
-    ? Math.floor(
-        (Date.now() - startTimeRef.current) / 1000
-      )
-    : 0;
-
-
-console.log("START TIME REF:", startTimeRef.current);
-console.log("CURRENT TIME:", Date.now());
-console.log("DURATION SEND:", durationSeconds);
-
         // Fetch to save exam
         fetch('/api/exams/save', {
           method: 'POST',
@@ -876,41 +862,16 @@ console.log("DURATION SEND:", durationSeconds);
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          // body: JSON.stringify({
-          //   grade,
-          //   score: scoreVal,
-          //   correctCount: correctCount,
-          //   totalQuestions: quizQuestions.length,
-          //   durationSeconds: 0,
-          //   isRevisionTest: true,
-          //   lessonId: selectedLessonId,
-          //   lessonTitle: activeLesson?.title || 'Bài học ôn tập'
-          // })
           body: JSON.stringify({
-
-    grade,
-
-    score: scoreVal,
-
-
-    correctCount,
-
-
-    totalQuestions: quizQuestions.length,
-    
-  durationSeconds: durationSeconds,
-
-    isRevisionTest:true,
-
-
-    lessonId:selectedLessonId,
-
-
-    lessonTitle:
-      activeLesson?.title ||
-      "Ôn Tập 1"
-
-})
+            grade,
+            score: scoreVal,
+            correctCount: correctCount,
+            totalQuestions: quizQuestions.length,
+            durationSeconds: 0,
+            isRevisionTest: true,
+            lessonId: selectedLessonId,
+            lessonTitle: activeLesson?.title || 'Bài học ôn tập'
+          })
         })
         .then(res => res.json())
         .then(() => {
@@ -1482,7 +1443,6 @@ console.log("DURATION SEND:", durationSeconds);
                       onClick={(e) => {
                         e.stopPropagation();
                         setIsTestMode(true);
-                        startTimeRef.current = Date.now();
                         setSelectedLessonId(lesson.id);
                         setViewTab('study');
                       }}
