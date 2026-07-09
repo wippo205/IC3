@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -1212,6 +1213,50 @@ function parseTokenPayload(token: string): { userId: string; sessionId?: string;
 // Make sure our server handles JSON requests with generous size limits for base64 file uploads
 app.use(express.json({ limit: '50mb' }));
 
+function toSheetExportUrl(value: string) {
+  if (!value) return '';
+  const trimmed = value.trim();
+
+  if (trimmed.includes('docs.google.com/spreadsheets/d/')) {
+    if (trimmed.includes('/pub?output=csv')) {
+      return trimmed;
+    }
+
+    if (trimmed.includes('/pubhtml')) {
+      return trimmed.replace('/pubhtml', '/pub?output=csv');
+    }
+
+    const match = trimmed.match(/\/spreadsheets\/d\/(?:e\/)?([a-zA-Z0-9-_]+)/);
+    if (match) {
+      const spreadsheetId = match[1];
+      return `https://docs.google.com/spreadsheets/d/e/${spreadsheetId}/pub?output=csv`;
+    }
+  }
+
+  return trimmed;
+}
+
+app.get('/api/login-sheet-data', async (req, res) => {
+  try {
+    const sheetUrl = process.env.VITE_LOGIN_SHEET_CSV_URL || '';
+    if (!sheetUrl) {
+      return res.status(400).json({ error: 'Thiếu cấu hình VITE_LOGIN_SHEET_CSV_URL trên server.' });
+    }
+
+    const exportUrl = toSheetExportUrl(sheetUrl);
+    const response = await fetch(exportUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const text = await response.text();
+    if (!response.ok || !text || text.includes('<!DOCTYPE') || text.includes('Sign in') || text.includes('Google Accounts')) {
+      return res.status(502).json({ error: 'Google Sheets chưa được công khai hoặc URL không trả về dữ liệu hợp lệ.' });
+    }
+
+    res.type('text/plain; charset=utf-8').send(text);
+  } catch (error: any) {
+    console.error('Failed to proxy Google Sheets data:', error);
+    res.status(500).json({ error: 'Lỗi khi đọc Google Sheets từ server.' });
+  }
+});
+
 // Middleware to extract authentication from Bearer token
 async function authMiddleware(req: any, res: any, next: any) {
   try {
@@ -1442,6 +1487,80 @@ app.post('/api/auth/register', async (req, res) => {
       role: 'student',
     }
   });
+});
+
+function buildSheetUsername(name: string, classroom: string, school: string): string {
+  const parts = [name, classroom, school]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)
+    .map((value) => value.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''))
+    .filter(Boolean);
+
+  const base = parts.join('-') || 'student';
+  return `student-${base}`.replace(/-+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+app.post('/api/auth/google-sheet-login', async (req, res) => {
+  try {
+    const { name, classroom, school, password, grade } = req.body || {};
+
+    if (!name || !classroom || !school || !password) {
+      return res.status(400).json({ error: 'Thiếu thông tin để đăng nhập bằng Google Sheets.' });
+    }
+
+    const cleanUsername = buildSheetUsername(name, classroom, school);
+    let user = await findUserByUsername(cleanUsername);
+
+    if (!user) {
+      const salt = crypto.randomBytes(16).toString('hex');
+      const passwordHash = crypto.pbkdf2Sync(String(password), salt, 1000, 64, 'sha512').toString('hex');
+      const id = cleanUsername;
+      const sessionId = Date.now() + '-' + Math.random().toString(36).substring(2, 9);
+
+      user = {
+        id,
+        username: cleanUsername,
+        nickname: String(name).trim(),
+        grade: Number(grade) || undefined,
+        school: String(school).trim(),
+        classroom: String(classroom).trim(),
+        role: 'student',
+        passwordHash,
+        salt,
+        createdAt: new Date().toISOString(),
+        currentSessionId: sessionId,
+      };
+
+      await saveUser(id, user);
+    }
+
+    const sessionId = Date.now() + '-' + Math.random().toString(36).substring(2, 9);
+    user.currentSessionId = sessionId;
+    user.username = user.username || cleanUsername;
+    user.nickname = user.nickname || String(name).trim();
+    user.school = String(school).trim();
+    user.classroom = String(classroom).trim();
+    user.grade = Number(grade) || user.grade;
+    user.role = user.role || 'student';
+    await saveUser(user.id, user);
+
+    const token = generateToken(user.id, sessionId);
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        nickname: user.nickname,
+        grade: user.grade,
+        school: user.school,
+        classroom: user.classroom,
+        role: user.role || 'student',
+      }
+    });
+  } catch (error: any) {
+    console.error('Google Sheets login error:', error);
+    res.status(500).json({ error: 'Không thể tạo hoặc đăng nhập tài khoản từ Google Sheets.' });
+  }
 });
 
 // Login

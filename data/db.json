@@ -2,8 +2,22 @@
   "users": {},
   "students": {},
   "teachers": {},
-  "progress": {},
+  "progress": {
+    "student-nguy-n-an-6a1-thcs-l-qu-n": [
+      {
+        "userId": "student-nguy-n-an-6a1-thcs-l-qu-n",
+        "grade": 6,
+        "lessonId": "lesson_custom_1780132862451",
+        "completedQuestions": 3,
+        "correctAnswers": 1,
+        "totalQuestions": 3,
+        "isCompleted": true,
+        "lastUpdated": "2026-07-09T03:19:41.169Z"
+      }
+    ]
+  },
   "exams": {},
   "files": {},
-  "lessons": {}
+  "lessons": {},
+  "questionsInitialized": true
 }

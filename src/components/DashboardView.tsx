@@ -35,11 +35,20 @@ interface DashboardViewProps {
 export default function DashboardView({ user, token, revisionProgress, homeworkProgress = [], examRecords, fileCount, onStartHomework }: DashboardViewProps) {
   const [assignments, setAssignments] = useState<any[]>([]);
 
+  const sanitizeToken = (value: string | null | undefined) => {
+    if (!value) return null;
+    const cleaned = value.replace(/[^\u0000-\u007F]/g, '');
+    return cleaned || null;
+  };
+
   useEffect(() => {
     const fetchHomework = async () => {
+      const safeToken = sanitizeToken(token);
+      if (!safeToken) return;
+
       try {
         const resp = await fetch('/api/homework/assignments', {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: { 'Authorization': `Bearer ${safeToken}` }
         });
         const data = await resp.json();
         if (resp.ok && data.success) {
