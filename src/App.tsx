@@ -633,6 +633,7 @@ export default function App() {
             >
               <ExamView 
                 grade={user.grade} 
+                lesson = {selectedHomeworkLessonId || undefined}
                 token={token} 
                 onBackToDashboard={() => handleNavigation('dashboard')} 
                 onExamSaved={fetchUserStats}

@@ -4,75 +4,130 @@
   "teachers": {},
   "progress": {},
   "progressHomework": {},
-  "exams": {},
+  "exams": {
+    "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh": [
+      {
+        "id": "fd5d2e2c-095a-425d-98c6-c6a0b365129f",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 60,
+        "correctCount": 3,
+        "totalQuestions": 5,
+        "durationSeconds": 385,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1780132862451",
+        "lessonTitle": "Ôn Tập 1",
+        "createdAt": "2026-07-09T08:37:18.457Z"
+      },
+      {
+        "id": "5c68bb90-74fa-4151-8292-aaae1e64815d",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 40,
+        "correctCount": 2,
+        "totalQuestions": 5,
+        "durationSeconds": 591,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1780132862451",
+        "lessonTitle": "Ôn Tập 1",
+        "createdAt": "2026-07-09T08:40:46.478Z"
+      },
+      {
+        "id": "2297ee05-9643-4f88-8530-bb76f92adbad",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 40,
+        "correctCount": 2,
+        "totalQuestions": 5,
+        "durationSeconds": 15,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1783586491270",
+        "lessonTitle": "Ôn Tập 2",
+        "createdAt": "2026-07-09T08:42:29.972Z"
+      },
+      {
+        "id": "ec4f73c7-e165-4078-9129-46a58687b944",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 100,
+        "correctCount": 5,
+        "totalQuestions": 5,
+        "durationSeconds": 25,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1780132862451",
+        "lessonTitle": "Ôn Tập 1",
+        "createdAt": "2026-07-09T08:43:12.264Z"
+      },
+      {
+        "id": "a73acd74-a2ac-48af-ac02-5b185933f07c",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 100,
+        "correctCount": 5,
+        "totalQuestions": 5,
+        "durationSeconds": 20,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1780132862451",
+        "lessonTitle": "Ôn Tập 1",
+        "createdAt": "2026-07-09T08:46:01.106Z"
+      },
+      {
+        "id": "417139d0-f588-499e-b86d-762de446c2aa",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 20,
+        "correctCount": 1,
+        "totalQuestions": 5,
+        "durationSeconds": 112,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1780132862451",
+        "lessonTitle": "Ôn Tập 1",
+        "createdAt": "2026-07-09T08:47:33.221Z"
+      },
+      {
+        "id": "c31cf5dd-00e3-4649-a5ae-28f9a11b21f8",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 20,
+        "correctCount": 1,
+        "totalQuestions": 5,
+        "durationSeconds": 227,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1780132862451",
+        "lessonTitle": "Ôn Tập 1",
+        "createdAt": "2026-07-09T08:49:27.637Z"
+      },
+      {
+        "id": "75900e5a-da36-4389-a373-29efdacec197",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 20,
+        "correctCount": 1,
+        "totalQuestions": 5,
+        "durationSeconds": 270,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1780132862451",
+        "lessonTitle": "Ôn Tập 1",
+        "createdAt": "2026-07-09T08:50:10.943Z"
+      },
+      {
+        "id": "cef21d3c-a301-4dcb-a843-ce1d0184fb99",
+        "userId": "student-nguy-n-ne-6a1-thcs-nguy-n-an-ninh",
+        "grade": 6,
+        "score": 100,
+        "correctCount": 5,
+        "totalQuestions": 5,
+        "durationSeconds": 10,
+        "isRevisionTest": true,
+        "lessonId": "lesson_custom_1780132862451",
+        "lessonTitle": "Ôn Tập 1",
+        "createdAt": "2026-07-09T08:50:47.373Z"
+      }
+    ]
+  },
   "files": {},
   "lessons": {},
   "homeworks": [],
-  "questions": [
-    {
-      "createdAt": "2026-05-30T02:50:18.294Z",
-      "explanation": "Tính năng đánh dấu trang cho phép người dùng lưu lại địa chỉ của các trang web yêu thích hoặc cần thiết để có thể truy cập nhanh chóng trong những lần truy cập sau.",
-      "qNum": 1,
-      "options": [
-        "Hộp địa chỉ",
-        "Lịch sử hoặc dòng thời gian",
-        "Mục yêu thích hoặc dấu trang",
-        "Duyệt đa trang một lúc"
-      ],
-      "text": "Bạn cần lưu danh sách các trang web để có thể dễ dàng quay trở lại vào lần sau. Bạn nên sử dụng tính năng nào của trình duyệt web?",
-      "correctIndex": 2,
-      "id": "q_bank_1780109416318",
-      "grade": 6,
-      "type": "choice"
-    },
-    {
-      "correctIndex": 1,
-      "text": "Lịch sử duyệt web và các trang web được đánh dấu trang cung cấp cho hacker một bản  đồ của tất cả các trang web mà người dùng truy cập. Cùng với các trang web thường xuyên truy cập, hacker có thể sử dụng gì để truy cập",
-      "qNum": 2,
-      "options": [
-        "Cutouts",
-        "Cookies",
-        "Settings",
-        "History"
-      ],
-      "explanation": "Đây là lý giải kiến thức chuẩn.",
-      "createdAt": "2026-07-09T03:09:21.892Z",
-      "id": "q_bank_1783566559886",
-      "grade": 6,
-      "type": "choice"
-    },
-    {
-      "qNum": 3,
-      "options": [
-        "Đăng nhập máy tính và mật khẩu của bạn bị vô hiệu hóa",
-        "Tên của bạn được giữ kín",
-        "Không có lịch sử, cookie, mật khẩu hoặc tệp tạm thời nào được ghi lại trên máy tính",
-        "Không thể nhìn thấy các gói được gửi/ nhận qua mạng trường học của học"
-      ],
-      "explanation": "Đây là lý giải kiến thức chuẩn.",
-      "createdAt": "2026-07-09T03:12:57.146Z",
-      "text": "Một trong những giáo viên của bạn nói rằng bạn nên thay đổi cài đặt trình duyệt của mình để duyệt web ở chế độ riêng tư. Vậy lợi ích của việc duyệt web ở chế đô riêng tư là gì?",
-      "correctIndex": 2,
-      "id": "q_bank_1783566775598",
-      "grade": 6,
-      "type": "choice"
-    },
-    {
-      "createdAt": "2026-07-09T03:25:28.532Z",
-      "qNum": 4,
-      "options": [
-        "Mật khẩu không cần thay đổi",
-        "Lịch sử của người dùng không được lưu trữ",
-        "Có nhiều dung lượng lưu trữ hơn trên máy tính",
-        "Thông tin tài khoản được lưu"
-      ],
-      "explanation": "Đây là lý giải kiến thức chuẩn.",
-      "text": "Bạn hãy cho biết, duyệt web riêng tư đảm bảo điều gì sau đây?",
-      "correctIndex": 2,
-      "id": "q_bank_1783567526887",
-      "grade": 6,
-      "type": "choice"
-    }
-  ],
+  "questions": [],
   "questionsInitialized": true
 }
